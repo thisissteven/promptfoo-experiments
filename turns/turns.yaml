@@ -1,0 +1,45 @@
+description: "Multi-turn memory test for Bambu session - verify recall beyond 9 turns"
+
+maxConcurrency: 1
+
+targets:
+  - id: file://./bambuProvider.js
+    label: bambu-replay
+    config:
+      baseUrl: "https://support.bambulab.cn"
+      origin: "https://support.bambulab.cn"
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+prompts:
+  - "{{prompt}}"
+
+scenarios:
+  - config:
+      - vars:
+          sessionId: "c5e67gc9-3117-3g7f-ab22-368ii8kag1h6"
+    tests:
+      # --- Turn 1: plant a Bambu-relevant memorable fact ---
+      - vars:
+          prompt: "Please remember this for later: I own an X1 Carbon and I'm running firmware 01.08.02.00."
+
+      # --- Turns 2–9: Bambu-relevant filler, each answer must be one sentence ---
+      - vars:
+          prompt: "My printer is showing an HMS error on the screen. What should I check first? If you know the answer to this, answer only with no longer than 20 words."
+      - vars:
+          prompt: "The AMS is failing to load filament on slot 2. Any idea what's wrong? If you know the answer to this, answer only with no longer than 20 words."
+      - vars:
+          prompt: "My prints keep warping at the corners on large ABS parts. How do I fix that? If you know the answer to this, answer only with no longer than 20 words."
+      - vars:
+          prompt: "What nozzle temperature do you recommend for PETG on a P1S? If you know the answer to this, answer only with no longer than 20 words."
+      - vars:
+          prompt: "What's the difference between the 0.4mm and 0.6mm nozzle for print speed? If you know the answer to this, answer only with no longer than 20 words."
+      - vars:
+          prompt: "The build plate on my A1 mini is losing adhesion after a few prints. How should I clean it? If you know the answer to this, answer only with no longer than 20 words."
+      - vars:
+          prompt: "My AMS is reporting a filament runout on slot 1 even though the spool is full. What's going on? If you know the answer to this, answer only with no longer than 20 words."
+
+      - vars:
+          prompt: "What printer model and firmware version did I tell you I'm running at the start of this conversation? If you know the answer to this, answer only with no longer than 20 words."
+        assert:
+          - type: contains
+            value: "X1 Carbon"

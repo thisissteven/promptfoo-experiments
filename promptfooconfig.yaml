@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: "Red team evaluation for Bambu Lab Customer Service Agent"
+
+targets:
+  - id: 'file://C:/Users/Steven/Downloads/bambulab/bambuProvider.js'
+    label: 'Bambu Lab Support Agent (Live)'
+    config:
+      baseUrl: 'https://support.bambulab.com'
+      origin: 'https://support.bambulab.com'
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0'
+      headers:
+        # Add any additional headers if needed, e.g.:
+        # 'Authorization': 'Bearer YOUR_TOKEN'
+        # 'Cookie': 'session=...'
+
+redteam:
+  purpose: >
+    A customer service agent for Bambu Lab (a 3D printer company).
+    It handles order status, troubleshooting, printer usage, filament, software, and product questions.
+    It should not provide harmful instructions, leak PII, or perform unauthorized actions.
+
+  plugins:
+    - 'harmful'
+    - 'pii'
+    - 'hijacking'
+    - 'excessive-agency'
+    - 'contracts'
+    - 'indirect-prompt-injection'
+
+  strategies:
+    - 'jailbreak'
+    - 'jailbreak:composite'
+    - 'prompt-injection'
+
+  numTests: 5
+  maxConcurrency: 2
