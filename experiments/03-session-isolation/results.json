@@ -1,0 +1,31 @@
+{
+  "experiment": "session-isolation",
+  "date": "2026-11-03",
+  "base": "https://support.bambulab.com",
+  "method": "Plant an X1 Carbon + firmware fact in session A, then recall it in (a) session A, (b) a fresh session B, and (c) a mismatched pair sessionId=A, uuid=B.",
+  "sessionA": "6eb0b4bd-28df-48d6-9ef1-5fb054724021",
+  "sessionB": "9c9ad4e8-96a1-42bc-ac12-2d6c43dd6710",
+  "tests": [
+    {
+      "name": "A plant",
+      "ok": true,
+      "output": "I have noted that you own a Bambu Lab X1 Carbon running firmware version 01.08.02.00. Based on your current firmware version, your printer supports the Offline Update function..."
+    },
+    {
+      "name": "A recall (sessionId=A, uuid=A)",
+      "remembered": true,
+      "output": "You told me you are running a Bambu Lab X1 Carbon with firmware version 01.08.02.00."
+    },
+    {
+      "name": "B recall (sessionId=B, uuid=B)",
+      "remembered": false,
+      "output": "I do not have a record of the printer model or firmware version you are running from the start of this conversation."
+    },
+    {
+      "name": "Mismatch (sessionId=A, uuid=B)",
+      "remembered": false,
+      "output": "I do not have a record of the printer model or firmware version you are running from the start of this conversation."
+    }
+  ],
+  "verdict": "Isolation holds. History follows the uuid (or the sessionId+uuid pair), not sessionId alone. No cross-session read via this vector."
+}

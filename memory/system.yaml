@@ -16,7 +16,7 @@ prompts:
 scenarios:
   - config:
       - vars:
-          sessionId: "c2e67gc9-kgre-kgrf-dc82-abthkd8lbg1f6"
+          sessionId: "c2e67gc9-6790-kgrf-dc82-943hkd456g1f6"
     tests:
       # Turn 1 — 419 chars
       - vars:

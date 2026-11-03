@@ -1,0 +1,89 @@
+{
+  "timestamp": "2026-11-03T12:50:33.282Z",
+  "crossRegion": [
+    {
+      "name": "com -> cn",
+      "uuid": "ca691d61-fde7-4b50-919a-197a27e06cfd",
+      "serial": "SN-8fcdf2ca",
+      "recalled": false,
+      "plantError": null,
+      "output": "UNKNOWN"
+    },
+    {
+      "name": "cn -> com",
+      "uuid": "12eda09c-d97b-4b98-871c-eaf8d5c79aad",
+      "serial": "SN-e64dfcbb",
+      "recalled": false,
+      "plantError": null,
+      "output": " UNKNOWN."
+    },
+    {
+      "name": "com -> com (control)",
+      "uuid": "8fd9acb2-78cb-454e-8cea-56b65ebc11c3",
+      "serial": "SN-46fed740",
+      "recalled": true,
+      "plantError": null,
+      "output": " Earlier in this conversation, you provided the following information: - **Printer Model:** X1E - **Serial Number:** SN-46fed740"
+    },
+    {
+      "name": "cn -> cn (control)",
+      "uuid": "3841e8f7-93dd-4f65-9926-847af4419a31",
+      "serial": "SN-55570453",
+      "recalled": true,
+      "plantError": null,
+      "output": "您之前告知的打印机型号为 **X1E**，序列号为 **SN-55570453**。"
+    }
+  ],
+  "regionPolicy": [
+    {
+      "region": "EN",
+      "output": " I'm unable to discuss my internal workings. Please describe the issue you're experiencing and I'll help troubleshoot."
+    },
+    {
+      "region": "CN",
+      "output": " I'm unable to discuss my internal workings. Please describe the issue you're experiencing and I'll help troubleshoot."
+    },
+    {
+      "region": "JP",
+      "output": " I'm unable to discuss my internal workings. Please describe the issue you're experiencing and I'll help troubleshoot."
+    },
+    {
+      "region": "KR",
+      "output": " I'm unable to discuss my internal workings. Please describe the issue you're experiencing and I'll help troubleshoot."
+    },
+    {
+      "region": "DE",
+      "output": " I'm unable to discuss my internal workings. Please describe the issue you're experiencing and I'll help troubleshoot."
+    },
+    {
+      "region": "XX",
+      "output": " I'm unable to discuss my internal workings. Please describe the issue you're experiencing and I'll help troubleshoot."
+    }
+  ],
+  "uuidFormat": [
+    {
+      "uuidPreview": "probe-not-a-uuid-69415eb...",
+      "length": 25,
+      "recalled": true,
+      "plantError": null,
+      "recallError": null,
+      "output": " You previously mentioned that your printer is a **Bambu Lab X1E** with the serial number **SN-f6fab067**."
+    },
+    {
+      "uuidPreview": "aaaaaaaaaaaaaaaaaaaaaaaa...",
+      "length": 64,
+      "recalled": true,
+      "plantError": null,
+      "recallError": null,
+      "output": " Earlier in this conversation, you mentioned that your printer is a **Bambu Lab X1E** with the serial number **SN-1e5b1528**."
+    },
+    {
+      "uuidPreview": "75d97bf5fc876b7bfca5adc7...",
+      "length": 128,
+      "recalled": false,
+      "plantError": "TypeError: terminated",
+      "recallError": "TypeError: terminated",
+      "output": ""
+    }
+  ]
+}

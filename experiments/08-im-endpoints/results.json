@@ -1,0 +1,138 @@
+{
+  "timestamp": "2026-11-03T17:11:27.493Z",
+  "uuid": "60b956eb-6867-4937-980e-2a4b0cfcaeae",
+  "cusEndpoints": [
+    {
+      "name": "message page",
+      "method": "POST",
+      "url": "https://oepa.bblops.com/csm/gateway/cus/message/page",
+      "status": 403,
+      "body": "{\"msg\":\"Have no authority\",\"code\":\"30003\",\"data\":\"not login\"}"
+    },
+    {
+      "name": "message recall (invalid id)",
+      "method": "POST",
+      "url": "https://oepa.bblops.com/csm/gateway/cus/message/recall",
+      "status": 403,
+      "body": "{\"msg\":\"Have no authority\",\"code\":\"30003\",\"data\":\"not login\"}"
+    },
+    {
+      "name": "message maskAsRead (empty)",
+      "method": "POST",
+      "url": "https://oepa.bblops.com/csm/gateway/cus/message/maskAsRead",
+      "status": 403,
+      "body": "{\"msg\":\"Have no authority\",\"code\":\"30003\",\"data\":\"not login\"}"
+    },
+    {
+      "name": "hasActiveConversation",
+      "method": "GET",
+      "url": "https://oepa.bblops.com/csm/gateway/cus/conversation/hasActiveConversation",
+      "status": 403,
+      "body": "{\"msg\":\"Have no authority\",\"code\":\"30003\",\"data\":\"not login\"}"
+    },
+    {
+      "name": "closeConversation",
+      "method": "POST",
+      "url": "https://oepa.bblops.com/csm/gateway/cus/conversation/closeConversation",
+      "status": 403,
+      "body": "{\"msg\":\"Have no authority\",\"code\":\"30003\",\"data\":\"not login\"}"
+    },
+    {
+      "name": "cancelQueue",
+      "method": "POST",
+      "url": "https://oepa.bblops.com/csm/gateway/cus/conversation/cancelQueue",
+      "status": 403,
+      "body": "{\"msg\":\"Have no authority\",\"code\":\"30003\",\"data\":\"not login\"}"
+    },
+    {
+      "name": "context jumpUrl (invalid)",
+      "method": "GET",
+      "url": "https://oepa.bblops.com/csm/gateway/cus/context/jumpUrl?contextType=order&contextId=0",
+      "status": 403,
+      "body": "{\"msg\":\"Have no authority\",\"code\":\"30003\",\"data\":\"not login\"}"
+    }
+  ],
+  "robotEndpoints": [
+    {
+      "name": "order query (email only)",
+      "method": "POST",
+      "url": "https://support.bambulab.com/gw/robot/front/order/query",
+      "status": 200,
+      "body": "{\"code\":\"B00009\",\"msg\":\"订单编号不能为空\",\"traceId\":\"a0f2a4b4ac574c59b6144d51856ce960.521.17937258909201631\",\"data\":null}"
+    },
+    {
+      "name": "order query (email + fake orderNum)",
+      "method": "POST",
+      "url": "https://support.bambulab.com/gw/robot/front/order/query",
+      "status": 200,
+      "body": "{\"code\":\"000000\",\"msg\":\"操作成功\",\"traceId\":\"677e301788214fc0b1fbdbff81452a56.513.17937258912051095\",\"data\":false}"
+    },
+    {
+      "name": "ticket unclosed (fake email)",
+      "method": "POST",
+      "url": "https://support.bambulab.com/gw/robot/ticket/unclosed/list",
+      "status": 200,
+      "body": "{\"code\":\"000000\",\"msg\":\"操作成功\",\"traceId\":\"a0f2a4b4ac574c59b6144d51856ce960.513.17937258914921541\",\"data\":null}"
+    },
+    {
+      "name": "ticket unclosed (fake phone)",
+      "method": "POST",
+      "url": "https://support.bambulab.com/gw/robot/ticket/unclosed/list",
+      "status": 200,
+      "body": "{\"code\":\"000000\",\"msg\":\"操作成功\",\"traceId\":\"a0f2a4b4ac574c59b6144d51856ce960.520.17937258919041483\",\"data\":null}"
+    },
+    {
+      "name": "mall card snapshot (invalid)",
+      "method": "POST",
+      "url": "https://support.bambulab.com/gw/robot/im/mall/card/snapshot",
+      "status": 200,
+      "body": "{\"code\":\"30002\",\"msg\":\"Token expiration\",\"data\":\"Not Authenticated\"}"
+    },
+    {
+      "name": "feedback (empty)",
+      "method": "POST",
+      "url": "https://support.bambulab.com/gw/robot/front/feedback",
+      "status": 200,
+      "body": "{\"code\":\"B00009\",\"msg\":\"must not be blank\",\"traceId\":\"677e301788214fc0b1fbdbff81452a56.521.17937258925141031\",\"data\":null}"
+    },
+    {
+      "name": "guide menu (public)",
+      "method": "GET",
+      "url": "https://support.bambulab.com/gw/robot/guide/menu/show?languageCode=en",
+      "status": 200,
+      "body": "{\"code\":\"000000\",\"msg\":\"操作成功\",\"traceId\":\"79099768624f453c972e5c510bab1312.513.17937258928710871\",\"data\":{\"languageCode\":\"en-US\",\"status\":true,\"content\":\"<div data-lark-html-role=\\\"root\\\"><span data-eleid=\\\"3\\\">Please select the category for your inquiry.</span></div>\",\"list\":[{\"id\":\"1170120730400075776\",\"title\":\"FAQ\",\"description\":\"FAQ\",\"fileId\":\"1005774818143043584\",\"fileUrl\":\"https://csm.bblcdn.com/hub/db1cb19e8345427083472bf8e7bc1f5c.png\",\"type\":1,\"relateType\":6,\"sortCode\":1,\"tagType\":0,\"commonLanguageVO\":{\"defaultSetting\":null,\"languageCode\":null,\"content\":null,\"sortCode\":null,\"externalLink\":null},\"configRelateVOList\":[{\"id\":\"1170120730400075777\",\"guideMenuId\":\"829938201325629440\",\"guideMenuConfigId\":\"1170120730400075776\",\"relateType\":6,\"relateId\":\"757608135275057152\",\"relateContent\":\"Warranty statement\",\"relateUrl\":null},{\"id\":\"1170120730400075778\",\"guideMenuId\":\"829938201325629440\",\"guideMenuConfigId\":\"1170120730400075776\",\"relateType\":6,\"relateId\":\"757672535194206208\",\"relateContent\":\"I'm interested in becoming a reseller\",\"relateUrl\":null},{\"id\":\"1170120730400075779\",\"guideMenuId\":\"829938201325629440\",\"guideMenuConfigId\":\"1170120730400075776\",\"relateType\":6,\"relateId\":\"7576"
+    },
+    {
+      "name": "front category list (public)",
+      "method": "GET",
+      "url": "https://support.bambulab.com/gw/robot/front/category/list?languageCode=en",
+      "status": 200,
+      "body": "{\"code\":\"000000\",\"msg\":\"操作成功\",\"traceId\":\"79099768624f453c972e5c510bab1312.514.17937258934240701\",\"data\":[{\"id\":\"998632961666826240\",\"categoryName\":\"Buy Spare Parts\",\"iconPath\":\"//hub-fe.bblcdn.cn/web-support-static/weixin-market.svg\",\"sortCode\":1,\"display\":true,\"parentId\":\"0\",\"externalLink\":\"https://bambulab.com/en/support/buy-spare-parts\",\"robotBanner2cVO\":null,\"questions\":null,\"questionDetail\":null,\"childrenNode\":[]},{\"id\":\"998633466018164736\",\"categoryName\":\"Register New Serial Number\",\"iconPath\":\"//hub-fe.bblcdn.cn/web-support-static/ring-one.svg\",\"sortCode\":2,\"display\":true,\"parentId\":\"0\",\"externalLink\":\"https://bambulab.com/en/support/activate-sn\",\"robotBanner2cVO\":null,\"questions\":null,\"questionDetail\":null,\"childrenNode\":[]},{\"id\":\"1005170703052570624\",\"categoryName\":\"Activate Extended Warranty Service\",\"iconPath\":\"//hub-fe.bblcdn.cn/web-support-static/more-four.svg\",\"sortCode\":3,\"display\":true,\"parentId\":\"0\",\"externalLink\":\"https://bambulab.com/en/support/warranty/binding\",\"robotBanner2cVO\":null,\"questions\":[{\"id\":\"1135166605519360000\",\"topic\":\"How to buy the Extended Warranty Service?\",\"iconPath\":null,\"sortCode\":1},{\"id\":\"1135166799158067200\",\"topic\":\"Is the extended warr"
+    },
+    {
+      "name": "duty roster (public)",
+      "method": "GET",
+      "url": "https://support.bambulab.com/gw/robot/duty/roster/show?languageCode=en&type=1",
+      "status": 200,
+      "body": "{\"code\":\"000000\",\"msg\":\"操作成功\",\"traceId\":\"677e301788214fc0b1fbdbff81452a56.517.17937258937451089\",\"data\":null}"
+    }
+  ],
+  "sseClose": {
+    "sameUuid": {
+      "closeWith": "same",
+      "closeStatus": 200,
+      "closeBody": "{\"code\":\"000000\",\"msg\":\"操作成功\",\"traceId\":\"79099768624f453c972e5c510bab1312.514.17937258959130705\",\"data\":null}",
+      "events": 0,
+      "done": false,
+      "outputLen": 0
+    },
+    "differentUuid": {
+      "closeWith": "different",
+      "closeStatus": 200,
+      "closeBody": "{\"code\":\"000000\",\"msg\":\"操作成功\",\"traceId\":\"677e301788214fc0b1fbdbff81452a56.517.17937258978231093\",\"data\":null}",
+      "events": 19,
+      "done": false,
+      "outputLen": 2041
+    }
+  }
+}
