@@ -1,0 +1,2018 @@
+﻿
+===== webpack://_N_E/./app/hooks/useClientInit.ts =====
+
+"use client";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { webSocketService } from "../services/WebSocketService";
+import { getQuestionType, QuestionType } from "../api/config";
+import { message } from "antd";
+import {
+  ActiveConversation,
+  ConversationStatus,
+  getHistory,
+  hasActiveConversation,
+  HistoryResponse,
+} from "@/app/api/message";
+import {
+  CurrentChatStatus,
+  MessageSender,
+  MessageStatus,
+  MessageType,
+  SocketConnectionStatus,
+  HeaderType,
+  RobotMessageType,
+  RobotMessage,
+} from "../store/types";
+import { createClientUUid, createMessageClientId } from "../utils/string";
+import { useMessageStore } from "../store";
+import { getSocketTicket, SocketTicket } from "../api/auth";
+import {
+  getCurrentLocale,
+  useTranslations,
+  useCurrentLocale,
+} from "@/app/locales";
+import { detectOSType, isHandyApp } from "../utils/device";
+import { HistoryLimit, SOCKET_CONNECT_CHANNEL } from "../constants";
+import { isOrderIdentityIssueType } from "../constants/orderIdentity";
+import { persistAndPushOrderIdentityCard } from "../components/chat/modules/orderIdentityCard/pushOrderIdentityCard";
+import { getEnvRegion, isOverseaEnv } from "../utils/env";
+import { ensureAiMinorProtectionChecked } from "../services/minorProtectionGuard";
+import {
+  getStoredChannel,
+  getStoredStore,
+  getEntryFrom,
+  hasStoreBoundParams,
+  getStoredIssueTypeCache,
+  setStoredIssueTypeCache,
+} from "./useURLSearchParams";
+import { authService } from "../services/AuthService";
+import { queryWelcomeConfig, queryGuideMenuConfig } from "@/app/api/robot";
+import { GuideMenuItemType } from "@/app/types/typeConfig/chatQuestion";
+import { useChatInit } from "./useChatInit";
+import { prefetchDutyRosterConfigs } from "../services/dutyRosterConfigCache";
+import { getUnclosedList } from "../api/robot/chatContent";
+import { trackTransferHuman } from "../services/trackEvents";
+import {
+  getSellingLogisticsSessionCache,
+  hasSellingLogisticsSessionCache,
+  isFromSellingLogisticsReturn,
+  persistSellingLogisticsSessionMessages,
+  restoreSellingLogisticsSessionToChat,
+  shouldRestoreSellingLogisticsSession,
+  stripFromSellingLogisticsUrlParam,
+} from "../utils/sellingLogisticsSessionCache";
+import { getStoreReception } from "../api/storeReception";
+import {
+  clearMallContextQuery,
+  getMallWsContextFromUrl,
+  renderMallCardFromUrl,
+} from "../utils/mallCardEntry";
+import {
+  consumePendingStoreBoundDirect,
+  setOneShotIssueTypeName,
+  type StoreBoundLinkParams,
+} from "../utils/storeBoundDirect";
+
+interface UrlParams {
+  group_id?: string;
+  channel?: string;
+}
+
+export interface QuestionList {
+  id?: string;
+  issueTypeName?: string;
+  abgId?: string;
+  /** Θù«Θóÿτ▒╗σ₧ïΦâ╜σè¢µáçΦ«░∩╝îσªé identity_verification */
+  tags?: string[];
+}
+
+export interface AIQuestionList {
+  content?: string;
+  languageCode?: string;
+  list: GuideMenuItemType[];
+  status: boolean;
+}
+
+function checkParamsValid(
+  params: UrlParams = {},
+  questionList: QuestionList[],
+) {
+  const { group_id } = params;
+  if (!group_id) {
+    return false;
+  }
+  return questionList.find((item) => item.id === group_id);
+}
+
+async function getSessionStatus(): Promise<ActiveConversation> {
+  const result = await hasActiveConversation();
+  return result;
+}
+
+let socketParams: Partial<SocketTicket & UrlParams> = {};
+
+// initSocket τÜäΦ░âτö¿σ║ÅσÅ╖∩╝îτö¿Σ║Äσ╣╢σÅæσê¥σºïσîûµù╢σÅ¬Φ«⌐µ£ÇσÉÄΣ╕Çµ¼íτ£ƒµ¡úσ╗║Φ┐₧
+let initSocketSeq = 0;
+
+function getChannelKey(): string {
+  const storedChannel = getStoredChannel();
+  if (storedChannel) {
+    return storedChannel;
+  }
+  if (getEnvRegion().includes("CN")) {
+    if (isHandyApp()) {
+      return SOCKET_CONNECT_CHANNEL.HANDY_CN;
+    }
+    return SOCKET_CONNECT_CHANNEL.OTHERS_CN;
+  }
+  if (isHandyApp()) {
+    return SOCKET_CONNECT_CHANNEL.HANDY_OR;
+  }
+  return SOCKET_CONNECT_CHANNEL.OTHERS_OR;
+}
+
+export const initSocket = async (
+  questionData: QuestionList,
+  initCallback?: (status: SocketConnectionStatus) => void,
+  // Σ╕Çµ¼íµÇºΘù¿σ║ùτ¢┤Φ┐₧σ£║µÖ»µÿ╛σ╝ÅΣ╝áσàÑΘô╛µÄÑΣ╕èτÜä channel/store∩╝êΣ╕ìΦ»╗ sessionStorage τÜä qr_*∩╝ëπÇé
+  // Σ╕ìΣ╝áµù╢τ╗┤µîüσÄƒΦíîΣ╕║∩╝ÜΣ╗Ä getChannelKey() / getStoredStore() µÄ¿σ»╝πÇé
+  storeBoundOverride?: { channel?: string; store?: string },
+) => {
+  // σÉîΣ╕ÇΘí╡Θ¥óσÅ»Φâ╜σ╣╢σÅæσê¥σºïσîû∩╝êWebView ΘçìσñìσèáΦ╜╜πÇüτÖ╗σ╜òµÇüσ░▒τ╗¬σÉÄσåìσê¥σºïσîûΣ╕Çµ¼í∩╝ëπÇé
+  // µ»Åµ¼íΘâ╜Φªüσàê await getSocketTicket∩╝îσàêσÅæΦ╡╖τÜäΘéúµ¼íσÅ»Φâ╜σÉÄΦÉ╜σ£░∩╝î
+  // Σ║Äµÿ»Σ╕ñµ¼íΘâ╜Φ╡░σê░ initConnection∩╝îµ£ìσèíτ½»Σ╛ºτòÖΣ╕ïΣ╕ñµ¥íσ╣╢σ¡ÿτÜäΦ┐₧µÄÑπÇéΣ╗Ñµ£ÇσÉÄΣ╕Çµ¼íΣ╕║σçåπÇé
+  const seq = ++initSocketSeq;
+  let socketUrl = process.env.NEXT_PUBLIC_API_HOST as string;
+
+  if (!socketUrl) {
+    message.error("socket error: socket url is empty");
+  }
+
+  if (
+    process.env.NODE_ENV === "development" &&
+    process.env.NEXT_PUBLIC_SOCKET_HOST
+  ) {
+    // τö¿Σ║Äµ£¼σ£░Φ░âΦ»ò socket σ£░σ¥Ç
+    socketUrl = process.env.NEXT_PUBLIC_SOCKET_HOST as string;
+  }
+  socketUrl = socketUrl.replace("https", "wss");
+  let initSuccess = false;
+
+  // Σ╜┐τö¿τÜäµù╢σÇÖσåìτöƒµêÉticket∩╝îσÉªσêÖσ«╣µÿôσñ▒µòê
+  let ticket = "";
+  try {
+    ticket = (await getSocketTicket()).ticket || "";
+  } catch {}
+  if (!ticket) {
+    if (typeof initCallback === "function") {
+      initCallback(SocketConnectionStatus.ERROR);
+    }
+    return;
+  }
+  const channelKey = storeBoundOverride?.channel || getChannelKey();
+  const language = getCurrentLocale().split("-")[0].toLowerCase();
+  // Θù¿σ║ùµë½τáüτ¢┤Φ┐₧Σ║║σ╖Ñµ╕áΘüôΘ£ÇΦªüµèè storeKey µï╝σê░ channel Θçî∩╝îΣ╛┐Σ║ÄσÉÄτ½»µîëΘù¿σ║ùσî║σêåΣ╝ÜΦ»¥µ¥Ñµ║ÉπÇé
+  // Θªûσ▒Å store-bound∩╝êqr_*∩╝ëΣ╕ÄΣ╕Çµ¼íµÇºτ¢┤Φ┐₧∩╝êoverride∩╝ëΣ╕ñµ¥íΦ╖»σ╛äΘâ╜Σ╝Üσ╕ª store∩╝î
+  // channel τ╗ƒΣ╕Çµï╝µêÉ `${channel}_${store}`πÇé
+  const storeKey = storeBoundOverride?.store ?? getStoredStore();
+  const isStoreBound = storeBoundOverride
+    ? Boolean(storeBoundOverride.channel && storeBoundOverride.store)
+    : hasStoreBoundParams();
+  const channelValue =
+    isStoreBound && storeKey ? `${channelKey}_${storeKey}` : channelKey;
+  const wsUrl = new URL(`${socketUrl}/ws/cus`);
+  wsUrl.searchParams.set("ticket", ticket);
+  wsUrl.searchParams.set("channel", channelValue);
+  wsUrl.searchParams.set("issueTypeId", questionData.id || "");
+  wsUrl.searchParams.set("language", language);
+  wsUrl.searchParams.set("terminal", detectOSType());
+  const entryFrom = getEntryFrom();
+  if (entryFrom) {
+    wsUrl.searchParams.set("from", entryFrom);
+  }
+  // τÖ╗σ╜òσÉÄΦïÑσ╖▓µ£ëΦ┐¢ΦíîΣ╕¡Σ╝ÜΦ»¥∩╝îµèèσòåσƒÄΦ┐¢τ║┐Σ╕èΣ╕ïµûçσ╕ªτ╗ÖσÉÄτ½»∩╝îτö¿Σ║ÄΣ╕ïσÅæ context_card
+  const mallContext = getMallWsContextFromUrl();
+  if (mallContext) {
+    wsUrl.searchParams.set("contextType", mallContext.contextType);
+    wsUrl.searchParams.set("businessId", mallContext.businessId);
+    if (mallContext.product) {
+      wsUrl.searchParams.set("product", mallContext.product);
+    }
+  }
+  if (seq !== initSocketSeq) {
+    // σ╖▓µ£ëµ¢┤µÖÜτÜäσê¥σºïσîûσ£¿Φ┐¢Φíî∩╝îµ£¼µ¼íτ¢┤µÄÑµö╛σ╝â∩╝îΘü┐σàìΣ╕ñµ¥íΦ┐₧µÄÑσ╣╢σ¡ÿ
+    return;
+  }
+  webSocketService.initConnection(wsUrl.toString(), (status) => {
+    if (status === SocketConnectionStatus.CONNECTED && !initSuccess) {
+      initSuccess = true;
+      // σ╗║Φ┐₧µêÉσèƒσÉÄσåìµ╕à URL∩╝îΘü┐σàìσê╖µû░/ΘçìΦ┐₧σåìµ¼íσ╕ªσÅéΣ┐âΣ╜┐µ£ìσèíτ½»ΘçìσñìµÄ¿σìí
+      if (mallContext) {
+        clearMallContextQuery();
+      }
+      if (typeof initCallback === "function") {
+        initCallback(status);
+      }
+    }
+  });
+  return webSocketService;
+};
+
+interface StoreBoundChannelDeps {
+  isAuthenticated: boolean | undefined;
+  loadHistory: () => Promise<void>;
+  setSessionInfo: (info: ActiveConversation) => void;
+  checkCanService: () => Promise<boolean>;
+  getCanServiceContent: () => string;
+  setRobotMessage: (msg: RobotMessage) => void;
+  initSuccess?: () => void;
+}
+
+/**
+ * Θù¿σ║ùµë½τáüτ¢┤Φ┐₧Σ║║σ╖Ñσ«óµ£ìσñäτÉåπÇé
+ *
+ * σæ╜Σ╕¡µ¥íΣ╗╢∩╝êσ┐àΦªüµ¥íΣ╗╢∩╝ë∩╝ÜsessionStorage σÉîµù╢σ¡ÿσ£¿ channel + store Σ╕ñΣ╕¬σÅéµò░∩╝î
+ * µ¥Ñµ║Éµÿ»Θªûσ▒Å URL τÜä `?channel=xxx&store=xxx`∩╝îτö▒ useURLSearchParams µîüΣ╣àσîûπÇé
+ *
+ * σåàΘâ¿µ╡üτ¿ï∩╝Ü
+ *   1. µ£¬τÖ╗σ╜ò ΓåÆ Φ╖│τÖ╗σ╜ò∩╝êµÄÑσÅúΦªüµ▒éτÖ╗σ╜òµÇüσëìτ╜«∩╝îτÖ╗σ╜òσ¢₧Φ╖│σÉÄσåìµ¼íΦ┐¢σàÑµ¡ñσç╜µò░∩╝ë∩╝¢
+ *   2. σ╖▓τÖ╗σ╜ò ΓåÆ Φ░â getStoreReception(channel, store) µï┐ issueTypeId / issueTypeName∩╝¢
+ *      - µÄÑσÅúσ╝éσ╕╕ / blocked=true / issueTypeId Σ╕║τ⌐║ ΓåÆ Θ¥ÖΘ╗ÿσ¢₧ΘÇÇµÖ«ΘÇÜµ╡üτ¿ï∩╝¢
+ *      - σÉªσêÖτ╝ôσ¡ÿσê░ sessionStorage∩╝êσÉî tab σåà AClickListener / ΘçìσÅæΘÇ╗Φ╛æσñìτö¿∩╝ë∩╝¢
+ *   3. µîëµÿ»σÉªµ£ëΦ┐¢ΦíîΣ╕¡Σ╝ÜΦ»¥σêåσê½ initSocketπÇé
+ *
+ * @returns true Φí¿τñ║σæ╜Σ╕¡ store-bound µ╡üτ¿ï∩╝êσ╖▓σñäτÉåµêûσ╖▓Φ╖│τÖ╗σ╜ò∩╝ë∩╝îΦ░âτö¿µû╣σ║ö return∩╝¢
+ *          false Φí¿τñ║Θ£ÇΦªüσ¢₧ΘÇÇσê░µÖ«ΘÇÜσê¥σºïσîûµ╡üτ¿ïπÇé
+ */
+const handleStoreBoundChannel = async (
+  deps: StoreBoundChannelDeps,
+): Promise<boolean> => {
+  if (!hasStoreBoundParams()) return false;
+
+  if (!deps.isAuthenticated) {
+    authService.login(true);
+    return true;
+  }
+
+  const storedChannel = getStoredChannel() || "";
+  const storedStore = getStoredStore() || "";
+
+  // σ╖▓µ£ëτ╝ôσ¡ÿΣ╝ÿσàêτö¿∩╝îΘü┐σàìµ»Åµ¼íΦ┐¢Θí╡Θ¥óΘâ╜µëôµÄÑσÅú∩╝¢τ╝ôσ¡ÿσÅ¬µ£ëΦ╡░Φ┐çµêÉσèƒΦ╖»σ╛äµëìΣ╝ÜσåÖσàÑ
+  let issueTypeCache = getStoredIssueTypeCache();
+  if (!issueTypeCache) {
+    try {
+      const reception = await getStoreReception({
+        store: storedStore,
+        channel: storedChannel,
+      });
+      if (!reception || reception.blocked || !reception.issueTypeId) {
+        // Θ¥ÖΘ╗ÿσ¢₧ΘÇÇ∩╝Üblocked=true / µÄÑσÅúΦ┐öσ¢₧τ⌐║ issueTypeId Σ╕Çσ╛ïΦ╡░µÖ«ΘÇÜµ╡üτ¿ï∩╝î
+        // Σ╕ìµ╢êΦ┤╣σÉÄτ½»Φ┐öσ¢₧τÜä fallbackIssueTypeId∩╝êΣ║ºσôüσå│τ¡û Q2=a∩╝ë
+        console.warn(
+          "[StoreBound] reception blocked or empty, fallback to default flow:",
+          reception?.blockReason,
+        );
+        return false;
+      }
+      issueTypeCache = {
+        issueTypeId: reception.issueTypeId,
+        issueTypeName: reception.issueTypeName || "",
+      };
+      setStoredIssueTypeCache(issueTypeCache);
+    } catch (error) {
+      console.error("[StoreBound] getStoreReception failed:", error);
+      return false;
+    }
+  }
+
+  try {
+    const sessionInfo = await getSessionStatus();
+    deps.setSessionInfo(sessionInfo);
+
+    await deps.loadHistory();
+
+    const onSocketError = () => {
+      console.error(
+        `[StoreBound] socket initialization failed, channel=${storedChannel}, store=${storedStore}`,
+      );
+    };
+
+    if (sessionInfo.hasActiveConversation) {
+      // µ£ëΦ┐¢ΦíîΣ╕¡τÜäΣ╝ÜΦ»¥∩╝ÜΣ╗Ñµ£ìσèíτ½»Φ┐öσ¢₧τÜä issueTypeId Σ╕║σçå∩╝êτö¿µê╖Σ╕èµ¼íΣ╝ÜΦ»¥τö¿τÜä∩╝ë∩╝î
+      // σÉîµ¡Ñσê╖µû░τ╝ôσ¡ÿ∩╝îΣ┐¥Φ»üσÉÄτ╗¡ΘçìσÅæ / IM Θô╛µÄÑσñìτö¿ issueTypeId Σ╕Äσ╜ôσëìΣ╝ÜΦ»¥Σ╕ÇΦç┤
+      const activeIssueTypeId = sessionInfo.issueTypeId;
+      if (activeIssueTypeId) {
+        setStoredIssueTypeCache({
+          issueTypeId: activeIssueTypeId,
+          issueTypeName: issueTypeCache.issueTypeName,
+        });
+      }
+      initSocket({ id: activeIssueTypeId }, (status) => {
+        if (status === SocketConnectionStatus.ERROR) {
+          onSocketError();
+          return;
+        }
+        if (typeof deps.initSuccess === "function") {
+          deps.initSuccess();
+        }
+      });
+      if (sessionInfo.status === ConversationStatus.LineUp) {
+        useMessageStore
+          .getState()
+          .setCurrentChatStatus(CurrentChatStatus.LineUp);
+        webSocketService.sendMessage(
+          JSON.stringify({ text: sessionInfo.queueDesc }),
+          {
+            msgType: MessageType.LineUp,
+            noNeedSendToWebsocket: true,
+            senderType: MessageSender.SYSTEM,
+          },
+        );
+      } else {
+        useMessageStore
+          .getState()
+          .setCurrentChatStatus(CurrentChatStatus.Online);
+      }
+    } else {
+      const canProceed = await deps.checkCanService();
+      if (!canProceed) {
+        deps.setRobotMessage({
+          type: MessageType.RichText,
+          headerType: HeaderType.MESSAGE,
+          senderType: MessageSender.ROBOT,
+          messageType: RobotMessageType.ROBOT_NORMAL_REPLY,
+          showFeedFooter: false,
+          content: deps.getCanServiceContent(),
+          timestamp: Date.now(),
+          senderName: "µÖ║Φâ╜σè⌐µëï",
+          robotData: {},
+        });
+        return true;
+      }
+
+      if (typeof window !== "undefined") {
+        window.globalData = window.globalData || {};
+        window.globalData.serveSocketPreparedCallback = () => {
+          useMessageStore
+            .getState()
+            .setCurrentChatStatus(CurrentChatStatus.SocketConnected);
+          window.globalData!.serveSocketPreparedCallback = undefined;
+        };
+      }
+      initSocket({ id: issueTypeCache.issueTypeId }, (status) => {
+        if (status === SocketConnectionStatus.ERROR) {
+          onSocketError();
+          return;
+        }
+        if (typeof deps.initSuccess === "function") {
+          deps.initSuccess();
+        }
+      });
+    }
+  } catch (error) {
+    console.error(
+      `[StoreBound] initialization failed, channel=${storedChannel}, store=${storedStore}:`,
+      error,
+    );
+  }
+  return true;
+};
+
+/**
+ * Σ╕Çµ¼íµÇºΘù¿σ║ùτ¢┤Φ┐₧∩╝ÜµƒÑ storeReception µï┐ issueTypeπÇé
+ * Σ╕ÄΘªûσ▒Å handleStoreBoundChannel Σ╕ìσÉîΓÇöΓÇöΣ╕ìΦ»╗Σ╣ƒΣ╕ìσåÖ qr_* µîüΣ╣àτ╝ôσ¡ÿ∩╝îΣ╗àµèèΘù¿σ║ùσÉìσåÖσàÑ
+ * τï¼τ½ïτÜä oneshot key Σ╛¢ formatMessage ΘÜÉΦùÅΘù¿σ║ù IssueType τ│╗τ╗ƒµ╢êµü»∩╝êneed_hide∩╝ëπÇé
+ *
+ * @returns σæ╜Σ╕¡∩╝êblocked=false Σ╕ö issueTypeId Θ¥₧τ⌐║∩╝ëΦ┐öσ¢₧ issueType∩╝¢σÉªσêÖ null∩╝êΦ░âτö¿µû╣σ¢₧ΘÇÇ∩╝ëπÇé
+ */
+const fetchOneShotIssueType = async (
+  params: StoreBoundLinkParams,
+): Promise<{ issueTypeId: string; issueTypeName: string } | null> => {
+  try {
+    const reception = await getStoreReception({
+      store: params.store,
+      channel: params.channel,
+    });
+    if (!reception || reception.blocked || !reception.issueTypeId) {
+      console.warn(
+        "[StoreBoundOneShot] reception blocked or empty, fallback:",
+        reception?.blockReason,
+      );
+      return null;
+    }
+    const issueTypeName = reception.issueTypeName || "";
+    setOneShotIssueTypeName(issueTypeName);
+    return { issueTypeId: reception.issueTypeId, issueTypeName };
+  } catch (error) {
+    console.error("[StoreBoundOneShot] getStoreReception failed:", error);
+    return null;
+  }
+};
+
+interface OneShotDirectClickDeps {
+  checkCanService: () => Promise<boolean>;
+  getCanServiceContent: () => string;
+  setRobotMessage: (msg: RobotMessage) => void;
+  /** blocked / µÄÑσÅúσ╝éσ╕╕ / Θ¥₧µ£ìσèíµù╢Θù┤σñûτÜäσ¢₧ΘÇÇ∩╝êΣ║ºσôüσå│τ¡û∩╝Üσ¢₧ΘÇÇσê░Θù«Θóÿτ▒╗σ₧ïΘÇëµï⌐µ░öµ│í∩╝ë */
+  onFallback: () => void;
+}
+
+/**
+ * τ½Öσåàτé╣σç╗σ╕ªσÅéΘô╛µÄÑτÜäΣ╕Çµ¼íµÇºτ¢┤Φ┐₧∩╝êσ╖▓τÖ╗σ╜ò + σ╜ôσëì socket µ£¬Φ┐₧µÄÑσ£║µÖ»∩╝ëπÇé
+ *
+ * Σ╕ÄτÖ╗σ╜òσ¢₧Φ╖│σ£║µÖ»τÜäσî║σê½∩╝Üµ¡ñµù╢σëìτ½»σ╖▓σ«îµêÉΘªûσ▒Åσê¥σºïσîû∩╝êσÄåσÅ▓σ╖▓σèáΦ╜╜πÇüµ┤╗Φ╖âΣ╝ÜΦ»¥σ╖▓µüóσñì∩╝ë∩╝î
+ * µòàΣ╕ìσåì getSessionStatus / loadHistory∩╝îτ¢┤µÄÑµîëΘô╛µÄÑσÅéµò░ initSocket σ╗║Φ┐₧σì│σÅ»πÇé
+ */
+export const runStoreBoundDirectConnectOnClick = async (
+  params: StoreBoundLinkParams,
+  deps: OneShotDirectClickDeps,
+): Promise<void> => {
+  const canProceed = await deps.checkCanService();
+  if (!canProceed) {
+    deps.setRobotMessage({
+      type: MessageType.RichText,
+      headerType: HeaderType.MESSAGE,
+      senderType: MessageSender.ROBOT,
+      messageType: RobotMessageType.ROBOT_NORMAL_REPLY,
+      showFeedFooter: false,
+      content: deps.getCanServiceContent(),
+      timestamp: Date.now(),
+      senderName: "µÖ║Φâ╜σè⌐µëï",
+      robotData: {},
+    });
+    return;
+  }
+
+  const issue = await fetchOneShotIssueType(params);
+  if (!issue) {
+    deps.onFallback();
+    return;
+  }
+
+  if (typeof window !== "undefined") {
+    window.globalData = window.globalData || {};
+    window.globalData.serveSocketPreparedCallback = () => {
+      useMessageStore
+        .getState()
+        .setCurrentChatStatus(CurrentChatStatus.SocketConnected);
+      window.globalData!.serveSocketPreparedCallback = undefined;
+    };
+  }
+  initSocket(
+    { id: issue.issueTypeId },
+    (status) => {
+      // σ╗║Φ┐₧σñ▒Φ┤Ñ∩╝êσªé ticket ΦÄ╖σÅûσñ▒Φ┤Ñ∩╝ë∩╝ÜΣ╕Ä handleOneShotDirectAfterLogin τÜä onSocketError Σ┐¥µîüΣ╕ÇΦç┤∩╝î
+      // Φ«░σ╜òµùÑσ┐ùσ╣╢σ¢₧ΘÇÇσê░Θù«Θóÿτ▒╗σ₧ïΘÇëµï⌐µ░öµ│í∩╝êσÉî blocked / µÄÑσÅúσ╝éσ╕╕∩╝ë∩╝îΘü┐σàìτö¿µê╖µùáµäƒτƒÑπÇüµùáΦ╖»σ╛äσÅ»Φ╡░πÇé
+      if (status === SocketConnectionStatus.ERROR) {
+        console.error(
+          `[StoreBoundOneShot] socket init failed on click, channel=${params.channel}, store=${params.store}`,
+        );
+        deps.onFallback();
+      }
+    },
+    {
+      channel: params.channel,
+      store: params.store,
+    },
+  );
+};
+
+interface OneShotDirectAfterLoginDeps {
+  loadHistory: () => Promise<void>;
+  setSessionInfo: (info: ActiveConversation) => void;
+  checkCanService: () => Promise<boolean>;
+  getCanServiceContent: () => string;
+  setRobotMessage: (msg: RobotMessage) => void;
+  initSuccess?: () => void;
+}
+
+/**
+ * τÖ╗σ╜òσ¢₧Φ╖│σÉÄµ╢êΦ┤╣ pendingπÇüµëºΦíîΣ╕Çµ¼íµÇºτ¢┤Φ┐₧∩╝êτ¢╕σ╜ôΣ║ÄΘªûσ▒Åσ╝Åµüóσñì + τ¢┤Φ┐₧∩╝ëπÇé
+ *
+ * τ╗ôµ₧äσ»╣Θ╜É handleStoreBoundChannel∩╝ÜgetSessionStatus ΓåÆ loadHistory ΓåÆ µîëµÿ»σÉªµ£ëΦ┐¢ΦíîΣ╕¡Σ╝ÜΦ»¥
+ * σêåσê½ initSocketπÇéσ╖«σ╝éσ£¿Σ║ÄσÅéµò░µ¥ÑΦç¬ pendingπÇüissueType Φ╡░ reception Σ╕öΣ╕ìσåÖ qr_*πÇé
+ *
+ * @returns true Φí¿τñ║σ╖▓σñäτÉå∩╝êΦ░âτö¿µû╣ return∩╝ë∩╝¢false Φí¿τñ║Θ£Çσ¢₧ΘÇÇµÖ«ΘÇÜσê¥σºïσîûµ╡üτ¿ïπÇé
+ */
+const handleOneShotDirectAfterLogin = async (
+  params: StoreBoundLinkParams,
+  deps: OneShotDirectAfterLoginDeps,
+): Promise<boolean> => {
+  const issue = await fetchOneShotIssueType(params);
+  if (!issue) {
+    // blocked / µÄÑσÅúσ╝éσ╕╕∩╝Üσ¢₧ΘÇÇµÖ«ΘÇÜσê¥σºïσîûµ╡üτ¿ï∩╝êΣ║ºσôüσå│τ¡û fallback=Θù«Θóÿτ▒╗σ₧ïµ░öµ│í∩╝ë
+    return false;
+  }
+
+  const override = { channel: params.channel, store: params.store };
+  try {
+    const sessionInfo = await getSessionStatus();
+    deps.setSessionInfo(sessionInfo);
+    await deps.loadHistory();
+
+    const onSocketError = () => {
+      console.error(
+        `[StoreBoundOneShot] socket init failed, channel=${params.channel}, store=${params.store}`,
+      );
+    };
+
+    if (sessionInfo.hasActiveConversation) {
+      const activeIssueTypeId = sessionInfo.issueTypeId;
+      initSocket(
+        { id: activeIssueTypeId },
+        (status) => {
+          if (status === SocketConnectionStatus.ERROR) {
+            onSocketError();
+            return;
+          }
+          if (typeof deps.initSuccess === "function") {
+            deps.initSuccess();
+          }
+        },
+        override,
+      );
+      if (sessionInfo.status === ConversationStatus.LineUp) {
+        useMessageStore
+          .getState()
+          .setCurrentChatStatus(CurrentChatStatus.LineUp);
+        webSocketService.sendMessage(
+          JSON.stringify({ text: sessionInfo.queueDesc }),
+          {
+            msgType: MessageType.LineUp,
+            noNeedSendToWebsocket: true,
+            senderType: MessageSender.SYSTEM,
+          },
+        );
+      } else {
+        useMessageStore
+          .getState()
+          .setCurrentChatStatus(CurrentChatStatus.Online);
+      }
+    } else {
+      const canProceed = await deps.checkCanService();
+      if (!canProceed) {
+        deps.setRobotMessage({
+          type: MessageType.RichText,
+          headerType: HeaderType.MESSAGE,
+          senderType: MessageSender.ROBOT,
+          messageType: RobotMessageType.ROBOT_NORMAL_REPLY,
+          showFeedFooter: false,
+          content: deps.getCanServiceContent(),
+          timestamp: Date.now(),
+          senderName: "µÖ║Φâ╜σè⌐µëï",
+          robotData: {},
+        });
+        return true;
+      }
+
+      if (typeof window !== "undefined") {
+        window.globalData = window.globalData || {};
+        window.globalData.serveSocketPreparedCallback = () => {
+          useMessageStore
+            .getState()
+            .setCurrentChatStatus(CurrentChatStatus.SocketConnected);
+          window.globalData!.serveSocketPreparedCallback = undefined;
+        };
+      }
+      initSocket(
+        { id: issue.issueTypeId },
+        (status) => {
+          if (status === SocketConnectionStatus.ERROR) {
+            onSocketError();
+            return;
+          }
+          if (typeof deps.initSuccess === "function") {
+            deps.initSuccess();
+          }
+        },
+        override,
+      );
+    }
+  } catch (error) {
+    console.error(
+      `[StoreBoundOneShot] init failed, channel=${params.channel}, store=${params.store}:`,
+      error,
+    );
+    // σê¥σºïσîûσ╝éσ╕╕∩╝êgetSessionStatus / checkCanService τ¡ë∩╝ë∩╝ÜΦ┐öσ¢₧ false σ¢₧ΘÇÇµÖ«ΘÇÜσê¥σºïσîûµ╡üτ¿ï∩╝î
+    // σÉªσêÖΦ░âτö¿µû╣Σ╝ÜΦ»»σêñΣ╕║σ╖▓σñäτÉåΦÇî return∩╝îσ»╝Φç┤τö¿µê╖ΘÖ╖σàÑµùáΣ╝ÜΦ»¥πÇüµùá socket τÜäτè╢µÇüπÇé
+    return false;
+  }
+  return true;
+};
+
+const handleSocketPrepare = ({
+  questionList,
+  sessionInfo,
+  searchParams,
+}: {
+  questionList: QuestionType[];
+  sessionInfo: ActiveConversation;
+  searchParams?: URLSearchParams;
+}) => {
+  // 1. σêñµû¡urlµÿ»σÉªσîàσÉ½Θù«Θóÿτ▒╗σ₧ïσÅéµò░
+  const config = checkParamsValid(socketParams, questionList);
+
+  // 2. σêñµû¡τö¿µê╖µÿ»σÉªσ£¿τ║┐
+  if (sessionInfo.hasActiveConversation) {
+    // 2.1 σªéµ₧£σ£¿τ║┐∩╝îτ¢┤µÄÑΦ┐¢σàÑ
+    initSocket({ ...socketParams, id: sessionInfo.issueTypeId });
+    // 2.2 σªéµ₧£σ£¿τ║┐∩╝îσ╣╢Σ╕öσ£¿µÄÆΘÿƒΣ╕¡∩╝îσêÖΘ£ÇΦªüµÄ¿ΘÇüΣ╕Çµ¥íµÄÆΘÿƒΣ┐íµü»
+    if (sessionInfo.status === ConversationStatus.LineUp) {
+      useMessageStore.getState().setCurrentChatStatus(CurrentChatStatus.LineUp);
+      webSocketService.sendMessage(
+        JSON.stringify({ text: sessionInfo.queueDesc }),
+        {
+          msgType: MessageType.LineUp,
+          noNeedSendToWebsocket: true,
+          senderType: MessageSender.SYSTEM,
+        },
+      );
+    } else {
+      useMessageStore.getState().setCurrentChatStatus(CurrentChatStatus.Online);
+    }
+  } else {
+    // σªéµ₧£Σ╕ìσ£¿τ║┐,σêñµû¡µÿ»σÉªΘ£ÇΦªüΘÇëµï⌐Θù«Θóÿτ▒╗σ₧ï
+    if (config) {
+      const issueTypeId = config.id || socketParams.group_id;
+      initSocket(
+        { ...socketParams, id: socketParams.group_id },
+        isOrderIdentityIssueType(config.tags)
+          ? async (status) => {
+              if (status !== SocketConnectionStatus.CONNECTED) return;
+              try {
+                await persistAndPushOrderIdentityCard({
+                  id: issueTypeId,
+                  issueTypeName: config.issueTypeName,
+                  tags: config.tags,
+                });
+              } catch (error) {
+                console.warn("[orderIdentity] save card failed:", error);
+              }
+            }
+          : undefined,
+      );
+    } else {
+      const sendData = { questionList };
+      // σ«óµê╖τ½»σê¥σºïσîûµù╢σÅæτÄ░σ¡ÿσ£¿σÄåσÅ▓Θù«Θóÿτ▒╗σ₧ï/Σ╕ìσ£¿τ║┐τè╢µÇü∩╝îτö▒τ│╗τ╗ƒΦç¬σè¿µÄ¿ΘÇü QuestionList σ╝òσ»╝Φ╜¼Σ║║σ╖Ñ
+      // ΓåÆ trigger=system
+      trackTransferHuman("im", "system");
+      // σö«Σ╕¡τë⌐µ╡üτÖ╗σ╜òσ¢₧Φ╖│∩╝ÜΣ╕ìσ▒òτñ║Θù«Θóÿτ▒╗σ₧ï∩╝êURL µ╕àτÉåσ£¿ insertFormMessage µüóσñìτ╝ôσ¡ÿσÉÄµëºΦíî∩╝ë
+      if (isFromSellingLogisticsReturn(searchParams)) {
+        if (!hasSellingLogisticsSessionCache()) {
+          stripFromSellingLogisticsUrlParam();
+        }
+      } else {
+        webSocketService.sendMessage(JSON.stringify(sendData), {
+          msgType: MessageType.QuestionList,
+          noNeedSendToWebsocket: true,
+          senderType: MessageSender.SYSTEM,
+          msgClassName: "emptyBackground",
+        });
+      }
+    }
+  }
+};
+
+/** σö«Σ╕¡τë⌐µ╡üτÖ╗σ╜òσ¢₧Φ╖│∩╝Üµèè sessionStorage τ╝ôσ¡ÿτÜäΣ╝ÜΦ»¥τëçµ«╡µÅÆσàÑΦüèσñ⌐σêùΦí¿σ╣╢ΦÉ╜σ║ô */
+const insertFormMessage = (searchParams?: URLSearchParams) => {
+  if (!shouldRestoreSellingLogisticsSession(searchParams)) {
+    return;
+  }
+  const cache = getSellingLogisticsSessionCache();
+  if (!cache?.messages?.length) {
+    return;
+  }
+
+  const { addOutgoingMessage, setRobotMessage } = useMessageStore.getState();
+  const restored = restoreSellingLogisticsSessionToChat({
+    addOutgoingMessage,
+    setRobotMessage,
+  });
+  if (!restored) {
+    return;
+  }
+
+  void persistSellingLogisticsSessionMessages(cache).catch((err) => {
+    console.warn("[insertFormMessage] saveRobotInfo failed:", err);
+  });
+};
+
+export const useClientInit = (
+  initSuccess: () => void,
+  searchParams?: URLSearchParams,
+  isAuthenticated?: boolean, // µû░σó₧τÖ╗σ╜òµÇüσÅéµò░
+  _setAuthenticatedCallback?: (authenticated: boolean) => void, // µû░σó₧σ¢₧Φ░âσç╜µò░τö¿Σ║Äµ¢┤µû░τÖ╗σ╜òµÇü
+  shouldInitialize: boolean = true, // µÿ»σÉªσ║öΦ»ÑµëºΦíîσê¥σºïσîû∩╝êτ¡ëσ╛àΦ«ñΦ»üµúÇµƒÑσ«îµêÉ∩╝ë
+) => {
+  const [questionListData, setQuestionListData] = useState<QuestionList[]>();
+  const [aiQuestionListData, setAIQuestionListData] =
+    useState<AIQuestionList>();
+  const t = useTranslations();
+  const { historyLoaded, initializeHistory } = useMessageStore();
+  const locale = useCurrentLocale();
+  const {
+    updateMessageStatus,
+    setLastHistoryMsg,
+    setSessionInfo,
+    setRobotMessage,
+  } = useMessageStore();
+
+  // Σ╜┐τö¿ useRef ΦÇîΣ╕ìµÿ» useState µ¥ÑΘü┐σàìσ¢áτè╢µÇüµ¢┤µû░ΦºªσÅæΘçìµû░µ╕▓µƒô
+  const hasInitializedRef = useRef(false);
+
+  // Σ╜┐τö¿ useCallback τ╝ôσ¡ÿ initHistory σç╜µò░
+  const initHistory = useCallback(
+    (historyData: HistoryResponse) => {
+      // 2. σê¥σºïσîûσÄåσÅ▓Φ«░σ╜ò
+      initializeHistory(historyData.records);
+      setLastHistoryMsg({
+        hasMore: historyData.hasMore,
+        nextCursor: historyData.nextCursor,
+      });
+    },
+    [initializeHistory, setLastHistoryMsg],
+  );
+  const { checkCanService, checkCanServiceInfo } = useChatInit();
+  const checkCanServiceInfoRef = useRef(checkCanServiceInfo);
+  useEffect(() => {
+    checkCanServiceInfoRef.current = checkCanServiceInfo;
+  }, [checkCanServiceInfo]);
+
+  useEffect(() => {
+    if (!historyLoaded) return;
+    insertFormMessage(searchParams);
+  }, [historyLoaded, searchParams]);
+
+  // Σ╜┐τö¿ useCallback τ╝ôσ¡ÿ AIInit σç╜µò░
+  const AIInit = useCallback(async () => {
+    // Σ╕ìτ«íµ£ëµ▓íµ£ëτÖ╗σ╜òµÇü∩╝îΘâ╜Θ£ÇΦªüΦÄ╖σÅû∩╝Ü1. µ¼óΦ┐ÄΦ»¡ 2. FAQ σ╝òσ»╝ΦÅ£σìòσêùΦí¿
+    try {
+      const [welcomeResult, guideMenuResult] = await Promise.allSettled([
+        queryWelcomeConfig({
+          type: 1,
+        }),
+        queryGuideMenuConfig({}),
+      ]);
+
+      // σñäτÉåµ¼óΦ┐ÄΦ»¡
+      if (welcomeResult.status === "fulfilled" && welcomeResult.value) {
+        const welcomeContent = welcomeResult.value;
+        // µ╖╗σèáµ¼óΦ┐Äµ╢êµü»σê░µ╢êµü»σêùΦí¿
+        setRobotMessage({
+          id: `robot-welcome-${Date.now()}`,
+          clientId: createMessageClientId(),
+          type: MessageType.Text,
+          headerType: HeaderType.MESSAGE,
+          senderType: MessageSender.ROBOT,
+          messageType: RobotMessageType.ROBOT_WELCOME,
+          content: welcomeContent,
+          timestamp: Date.now(),
+          senderName: "µÖ║Φâ╜σè⌐µëï",
+          robotData: {},
+        });
+      } else if (welcomeResult.status === "rejected") {
+        console.error("Failed to load welcome config:", welcomeResult.reason);
+      }
+
+      // σñäτÉåσ╝òσ»╝ΦÅ£σìò∩╝êFAQσêùΦí¿∩╝ë
+      if (guideMenuResult.status === "fulfilled" && guideMenuResult.value) {
+        const guideMenuData = guideMenuResult.value;
+
+        // µÅÉσÅûΘù«ΘóÿσêùΦí¿ - GuideMenuConfigType µ£ë list σÆî content σ¡ùµ«╡
+        if (guideMenuData.list && guideMenuData.list.length > 0) {
+          setAIQuestionListData(guideMenuData);
+
+          // µ╖╗σèáµÄ¿ΦìÉΘù«Θóÿµ╢êµü»
+          setRobotMessage({
+            id: `robot-recommend-${Date.now()}`,
+            clientId: createMessageClientId(),
+            type: MessageType.Text,
+            headerType: HeaderType.MESSAGE,
+            senderType: MessageSender.ROBOT,
+            messageType: RobotMessageType.ROBOT_RECOMMEND_QUESTION,
+            content: "σ╕╕ΦºüΘù«Θóÿ∩╝Ü",
+            timestamp: Date.now() + 100, // τ¿ìσ╛«σ╗╢Φ┐ƒ∩╝îτí«Σ┐¥σ£¿µ¼óΦ┐ÄΦ»¡Σ╣ïσÉÄ
+            senderName: "µÖ║Φâ╜σè⌐µëï",
+            robotData: {
+              questions: guideMenuData,
+            },
+          });
+        }
+      } else if (guideMenuResult.status === "rejected") {
+        console.error(
+          "Failed to load guide menu config:",
+          guideMenuResult.reason,
+        );
+      }
+    } catch (error) {
+      console.error("Error in initConfig:", error);
+      message.error("σèáΦ╜╜Θàìτ╜«σñ▒Φ┤Ñ∩╝îΦ»╖σê╖µû░ΘçìΦ»ò");
+    }
+  }, [locale, setRobotMessage]);
+
+  // σìòτï¼ΦÄ╖σÅûσÄåσÅ▓Φ«░σ╜òτÜäσç╜µò░
+  const loadHistory = useCallback(async () => {
+    try {
+      const historyData = await getHistory({
+        cursor: "",
+        limit: HistoryLimit,
+      });
+      initHistory(historyData);
+    } catch (error) {
+      console.error("Failed to load history:", error);
+    }
+  }, [initHistory]);
+
+  // σìòτï¼ΦÄ╖σÅûΘù«ΘóÿσêùΦí¿τÜäσç╜µò░
+  const loadQuestionList = useCallback(async () => {
+    try {
+      const questionList = await getQuestionType();
+      setQuestionListData(questionList);
+      return questionList;
+    } catch (error) {
+      console.error("Failed to load question list:", error);
+      throw error;
+    }
+  }, []);
+
+  // σ░å initConfig µÅÉσÅûΣ╕║ useCallback∩╝îµÿÄτí«µëÇµ£ëΣ╛¥Φ╡ûΘí╣
+  const initConfig = useCallback(async () => {
+    // Φ┐¢σàÑσ«óµ£ìΘí╡µù╢σê╖µû░Σ╕Çµ¼íµÄÆτÅ¡Θàìτ╜«τ╝ôσ¡ÿ∩╝îΣ╛¢σæ╜Σ╕¡ 4015∩╝êσ«óµ£ìΣ╕ìσ£¿σ╖ÑΣ╜£µù╢Θù┤∩╝ëµù╢µÿáσ░ä offlineContentπÇé
+    // fire-and-forget∩╝îσñ▒Φ┤ÑΣ╕ìΘÿ╗σí₧Σ╕╗µ╡üτ¿ïπÇé
+    void prefetchDutyRosterConfigs();
+
+    // µ£¬τÖ╗σ╜òτé╣σç╗σ╕ªσÅéΘô╛µÄÑ ΓåÆ µÜéσ¡ÿ pending ΓåÆ Φ╖│τÖ╗σ╜ò ΓåÆ σ¢₧Φ╖│σÉÄσ£¿µ¡ñµ╢êΦ┤╣Σ╕Çµ¼íσ╣╢τ¢┤Φ┐₧∩╝êτö¿σ«îσì│σ╝â∩╝ëπÇé
+    // Σ╗àτÖ╗σ╜òµÇüµ╢êΦ┤╣∩╝¢µ╕╕σ«óσ¢₧Φ╖│Σ┐¥τòÖ pending∩╝îσ╛àτ£ƒµ¡úτÖ╗σ╜òσÉÄσåìτöƒµòêπÇé
+    if (isAuthenticated) {
+      const pendingDirect = consumePendingStoreBoundDirect();
+      if (pendingDirect) {
+        const oneShotHandled = await handleOneShotDirectAfterLogin(
+          pendingDirect,
+          {
+            loadHistory,
+            setSessionInfo,
+            checkCanService,
+            getCanServiceContent: () =>
+              checkCanServiceInfoRef.current?.content || "",
+            setRobotMessage,
+            initSuccess,
+          },
+        );
+        if (oneShotHandled) return;
+      }
+    }
+
+    const handled = await handleStoreBoundChannel({
+      isAuthenticated,
+      loadHistory,
+      setSessionInfo,
+      checkCanService,
+      getCanServiceContent: () => checkCanServiceInfoRef.current?.content || "",
+      setRobotMessage,
+      initSuccess,
+    });
+    if (handled) return;
+
+    // σ£¿ HandyApp Σ╕¡Σ╕ìσà│σ┐âτÖ╗σ╜òµÇü∩╝îµ¡úσ╕╕µëºΦíî
+    const inHandyApp = isHandyApp();
+
+    // σªéµ₧£Σ╕ìσ£¿ HandyApp Σ╕¡∩╝îΣ╕öµ▓íµ£ëτÖ╗σ╜òµÇü
+    if (!inHandyApp && isAuthenticated === false) {
+      await AIInit();
+      return;
+    }
+
+    // σªéµ₧£σ╜ôσëìurlΣ╕¡µ£ëformσÅéµò░∩╝îΣ╕öτ¡ëΣ║Ä"im"∩╝îσêÖΣ╕ìΘ£ÇΦªüµëºΦíîAIInit
+    const targetParam = searchParams?.get("target") || "";
+
+    const loginInfo = authService.getUserInfo();
+
+    const [, sessionInfo] = await Promise.all([
+      loadHistory(),
+      getSessionStatus(),
+    ]);
+
+    // µ▓íµ£ëΦ┐¢ΦíîΣ╕¡τÜäΣ╝ÜΦ»¥∩╝îΣ╕öΣ╕ìµÿ»ΦºªσÅæimΣ║║σ╖ÑπÇéΣ╕ìµëºΦíîΣ║║σ╖Ñσ«óµ£ìσê¥σºïσîû
+    if (
+      !sessionInfo.hasActiveConversation &&
+      targetParam.toLowerCase() !== "im"
+    ) {
+      const unclosedListPromise = loginInfo
+        ? getUnclosedList({
+            phone: loginInfo.phone,
+            email: loginInfo.email,
+          }).catch((err) => {
+            console.error("getUnclosedList failed:", err);
+            return null;
+          })
+        : Promise.resolve(null);
+
+      const unclosedList = await unclosedListPromise;
+
+      if (unclosedList) {
+        // µ╖╗σèáµ¼óΦ┐Äµ╢êµü»σê░µ╢êµü»σêùΦí¿
+        setRobotMessage({
+          id: `robot-welcome-${Date.now()}`,
+          clientId: createMessageClientId(),
+          type: MessageType.Template,
+          headerType: HeaderType.MESSAGE,
+          senderType: MessageSender.ROBOT,
+          messageType: RobotMessageType.ROBOT_UNHANDLED_WORK_ORDER,
+          content: JSON.stringify(unclosedList),
+          timestamp: Date.now(),
+          senderName: "µÖ║Φâ╜σè⌐µëï",
+          robotData: {},
+        });
+      }
+      // Σ╕ìµÿ»Σ║║σ╖Ñσ£║µÖ»∩╝Üµ╡╖σñûµëìΘóäσàêσêñµû¡Φâ╜σÉªΦ┐¢Φíî AI σ»╣Φ»¥πÇéσ¢╜σåàΣ╕ìΦ░âτö¿πÇüΣ╕ìσêñµû¡πÇé
+      // µ¼óΦ┐ÄΦ»¡τàºσ╕╕σ▒òτñ║πÇéτ£ƒµ¡úµïªµê¬σÅæτöƒσ£¿τö¿µê╖σÅæΘÇü AI µ╢êµü»µù╢πÇé
+      if (!inHandyApp) {
+        if (isOverseaEnv()) {
+          void ensureAiMinorProtectionChecked();
+        }
+        await AIInit();
+      }
+      // σòåσƒÄσ╕ªσÅéΦ┐¢τ║┐τÜäσòåσôü/Φ«óσìòσìíτëçµÄÆσ£¿µ¼óΦ┐ÄΦ»¡πÇüσ╝òσ»╝ΦÅ£σìòΣ╣ïσÉÄ
+      await renderMallCardFromUrl(searchParams);
+      return;
+    }
+
+    // σ╝ÇσºïΦºªσÅæim
+    const clientId = createClientUUid(MessageType.Template);
+
+    // σÅæΘÇüσèáΦ╜╜Σ╕¡
+    try {
+      webSocketService.sendMessage(`{"text":"${t.systemMsg.messageLoading}"}`, {
+        msgType: MessageType.Template,
+        noNeedSendToWebsocket: true,
+        clientId,
+      });
+
+      // Θ£ÇΦªüσàêσêñµû¡µÿ»σÉªµÿ»σ£¿σ«óµ£ìµ£ìσèíµù╢Θù┤
+      const canProceed = await checkCanService();
+      if (!canProceed) {
+        setRobotMessage({
+          type: MessageType.RichText,
+          headerType: HeaderType.MESSAGE,
+          senderType: MessageSender.ROBOT,
+          messageType: RobotMessageType.ROBOT_NORMAL_REPLY,
+          showFeedFooter: false,
+          content: checkCanServiceInfoRef.current?.content || "",
+          timestamp: Date.now(),
+          senderName: "µÖ║Φâ╜σè⌐µëï",
+          robotData: {},
+        });
+        // ΦÄ╖σÅûσ╜ôσëìurl∩╝îσêáΘÖñtargetσÅéµò░
+        const url = new URL(window.location.href);
+        if (url.searchParams.get("target")) {
+          url.searchParams.delete("target");
+          window.history.replaceState({}, document.title, url.toString());
+        }
+        return;
+      }
+
+      const [questionList] = await Promise.all([
+        // ΦÄ╖σÅûΘù«Θóÿτ▒╗σ₧ïµò░µì«
+        loadQuestionList(),
+      ]);
+
+      setSessionInfo(sessionInfo);
+
+      // ΘÜÉΦùÅσèáΦ╜╜Σ╕¡
+      updateMessageStatus(clientId as string, {
+        hide: true,
+        status: MessageStatus.Success,
+      });
+
+      // 5. µÜ┤Θ£▓∩╝îσ«îµêÉσê¥σºïσîû
+      if (typeof initSuccess === "function") {
+        initSuccess();
+      }
+      const params = {
+        group_id: searchParams?.get("group_id") || "",
+        // σ╜ôσëìΣ╜┐τö¿µ╕áΘüô
+        channel: searchParams?.get("channel") || "",
+      };
+      socketParams = {
+        ...params,
+      };
+      handleSocketPrepare({
+        questionList,
+        sessionInfo,
+        searchParams,
+      });
+      // ΦÄ╖σÅûσ╜ôσëìurl∩╝îσêáΘÖñtargetσÅéµò░
+      const url = new URL(window.location.href);
+      if (url.searchParams.get("target")) {
+        url.searchParams.delete("target");
+        window.history.replaceState({}, document.title, url.toString());
+      }
+    } catch {
+      updateMessageStatus(clientId, {
+        content: `{"text":"${t.systemMsg.refreshPageTips}"}`,
+      });
+      // µ£¬τƒÑσ╝éσ╕╕Σ╕ìσåìΣ╕╗σè¿µè¢σç║
+      // Toast.error(t.systemMsg.unknownErrorTips);
+    }
+  }, [
+    isAuthenticated,
+    AIInit,
+    loadHistory,
+    loadQuestionList,
+    setSessionInfo,
+    updateMessageStatus,
+    initSuccess,
+    searchParams,
+    checkCanService,
+    setRobotMessage,
+  ]);
+
+  useEffect(() => {
+    // τ¡ëσ╛àΦ«ñΦ»üµúÇµƒÑσ«îµêÉσÉÄσåìµëºΦíîσê¥σºïσîû
+    if (!shouldInitialize) {
+      return;
+    }
+
+    // Θÿ▓µ¡óΘçìσñìσê¥σºïσîû
+    if (hasInitializedRef.current) {
+      return;
+    }
+
+    hasInitializedRef.current = true;
+    initConfig();
+  }, [initConfig, shouldInitialize]);
+
+  return {
+    questionListData,
+    aiQuestionListData,
+    // µÜ┤Θ£▓τï¼τ½ïτÜäµû╣µ│ò∩╝îσàüΦ«╕σñûΘâ¿σìòτï¼Φ░âτö¿
+    loadHistory,
+    loadQuestionList,
+  };
+};
+
+
+===== webpack://_N_E/./app/client/socketClient.ts =====
+
+import { getSocketTicket } from "../api/auth";
+import {
+  ConversationStatus,
+  getHistory,
+  hasActiveConversation,
+} from "../api/message";
+import {
+  HEARTBEAT_TIMEOUT_CLOSE_CODE,
+  HistoryLimit,
+  MANUAL_CLOSE_CODE,
+  MAX_HEARTBEAT_RECONNECT_ATTEMPTS,
+  MAX_MISSED_PONG_COUNT,
+  SocketErrorCode,
+} from "../constants";
+import { errorFileLocalStore } from "../localStore/errorFileManage";
+import {
+  reporterInstance,
+  ReportScene,
+  reportScene,
+} from "../services/DataReporter";
+import {
+  autoRetryMessage,
+  webSocketService,
+} from "../services/WebSocketService";
+import { syncImSessionFromActiveConversationApi } from "../services/syncImSessionFromApi";
+import { useMessageStore } from "../store";
+import {
+  CurrentChatStatus,
+  HeaderType,
+  HeartType,
+  Message,
+  MessageNotRender,
+  MessageSender,
+  MessageStatus,
+  MessageType,
+  SocketConnectionStatus,
+  SocketErrorInfoType,
+  UploadFileInfo,
+} from "../store/types";
+import { getDeviceInfo, isHandyApp } from "../utils/device";
+import { updateUrlParameter } from "../utils/url";
+import { getTranslations, interpolate } from "@/app/locales";
+import { authService } from "@/app/services/AuthService";
+import { getFileTypeFromFile } from "../utils/file";
+import { getEnvRegion, isOverseaEnv } from "../utils/env";
+import { getOfflineContentByDutyRosterId } from "../services/dutyRosterConfigCache";
+
+const handleHistoryGet = async () => {
+  const historyData = await getHistory({
+    cursor: "",
+    limit: HistoryLimit,
+  });
+  const msgList = useMessageStore.getState().msgList;
+  const lastMsgInMsgList = msgList[msgList.length - 1];
+  const firstRecord = historyData.records?.[0];
+  if (
+    lastMsgInMsgList &&
+    firstRecord &&
+    firstRecord.id !== lastMsgInMsgList.id
+  ) {
+    useMessageStore.getState().initializeHistory(historyData.records);
+    useMessageStore.getState().setLastHistoryMsg({
+      hasMore: historyData.hasMore,
+      nextCursor: historyData.nextCursor,
+    });
+  }
+};
+
+interface WebSocketOptions {
+  url: string; // WebSocketµ£ìσèíσÖ¿σ£░σ¥Ç
+  reconnectInterval?: number; // µû¡τ║┐ΘçìΦ┐₧Θù┤ΘÜö∩╝êµ»½τºÆ∩╝ë
+  maxReconnectAttempts?: number; // µ£ÇσñºΘçìΦ┐₧µ¼íµò░
+  ackTimeout?: number; // ACKτí«Φ«ñΦ╢àµù╢µù╢Θù┤
+  maxRetries?: number; // µ╢êµü»µ£ÇσñºΘçìΦ»òµ¼íµò░
+  onReadyStateChange?: (state: string) => void; // Φ┐₧µÄÑτè╢µÇüσÅÿσîûσ¢₧Φ░â
+  onMessage?: (data: Message) => void; // µ╢êµü»µÄÑµö╢σ¢₧Φ░â
+  onError?: (error: Event) => void; // ΘöÖΦ»»σñäτÉåσ¢₧Φ░â
+  onClose?: (event: CloseEvent) => void; // Φ┐₧µÄÑσà│Θù¡σ¢₧Φ░â
+  onReconnect?: (attempt: number) => void; // ΘçìΦ┐₧σ░¥Φ»òσ¢₧Φ░â
+  onMessageAck?: (clientId: string, ackMessage?: Message) => void; // µ╢êµü»τí«Φ«ñσ¢₧Φ░â
+  onMessageFailure?: (msgId: string) => void; // µ╢êµü»σÅæΘÇüσñ▒Φ┤Ñσ¢₧Φ░â
+  onCommonMessageHandler?: (msg: Message) => void;
+}
+
+class IMWebSocketClient {
+  private socket: WebSocket | null = null;
+  private reconnectCount = 0;
+  private isManualClose = false;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private messageQueue: Map<string, Partial<Message>> = new Map(); // µ£¬τí«Φ«ñµ╢êµü»Θÿƒσêù
+  private pendingAckTimers: Map<string, ReturnType<typeof setTimeout>> =
+    new Map(); // ACKτ¡ëσ╛àΦ«íµù╢σÖ¿
+
+  private status: SocketConnectionStatus | null = null;
+  private heartbeatInterval: NodeJS.Timeout | null = null;
+  private pingTimeout: NodeJS.Timeout | null = null;
+  // σÅæΘÇüσ┐âΦ╖│Θù┤ΘÜöµù╢Θù┤
+  private heartInterval: number = 20000;
+  // Σ╕èΣ╕Çµ¼ípongµù╢Θù┤
+  private lastPongTime: number | null = null;
+  // Σ╕èΣ╕Çµ¼ípingµù╢Θù┤
+  private lastPingTime: number = Date.now();
+  // Φ┐₧τ╗¡µ£¬µö╢σê░pongτÜäµ¼íµò░∩╝îµö╢σê░pongµêûΘçìµû░σ╗║Φ┐₧σÉÄµ╕àΘ¢╢
+  private missedPongCount: number = 0;
+  // Φ┐₧τ╗¡τö▒σ┐âΦ╖│Φ╢àµù╢ΦºªσÅæτÜäΘçìΦ┐₧µ¼íµò░∩╝îσÅ¬µ£ëτ£ƒµ¡úµö╢σê░pongµëìµ╕àΘ¢╢
+  private heartbeatReconnectCount: number = 0;
+
+  private isReconnect: boolean = false;
+
+  // close() Σ╣ïσÉÄσ«₧Σ╛ïΣ╝ÜΦó½ WebSocketService Σ╕óσ╝â∩╝îτ╜«Σ╜ìσÉÄΣ╕ìσ╛ùσåìσ╗║Σ╗╗Σ╜òΦ┐₧µÄÑ
+  private isDisposed: boolean = false;
+
+  constructor(private options: WebSocketOptions) {
+    // Φ«╛τ╜«Θ╗ÿΦ«ñσÇ╝
+    this.options.reconnectInterval = this.options.reconnectInterval || 3000;
+    this.options.maxReconnectAttempts = this.options.maxReconnectAttempts || 10;
+    this.options.ackTimeout = this.options.ackTimeout || 5000;
+    this.options.maxRetries = this.options.maxRetries || 3;
+    this.connect();
+  }
+
+  // σê¥σºïσîûΦ┐₧µÄÑ
+  public async connect(isReconnect = false): Promise<void> {
+    if (this.isDisposed) return;
+    if (
+      this.status === SocketConnectionStatus.CONNECTING ||
+      this.status === SocketConnectionStatus.CONNECTED
+    ) {
+      return;
+    }
+    try {
+      this.updateStatus(SocketConnectionStatus.CONNECTING);
+      // µ╕àτÉåτÄ░µ£ëΦ┐₧µÄÑ
+      if (this.socket) {
+        this.socket.onopen = null;
+        this.socket.onmessage = null;
+        this.socket.onerror = null;
+        this.socket.onclose = null;
+        this.socket = null;
+      }
+      let socketUrl = this.options.url;
+      this.isReconnect = isReconnect;
+      if (isReconnect) {
+        // Θªûµ¼íσ╗║Φ┐₧∩╝êσÉ½σê╖µû░Θí╡Θ¥ó∩╝ëΣ╕ìτ«ùΘçìΦ┐₧∩╝îΣ╕ìΦ»Ñτ╗Öτö¿µê╖πÇîµ¡úσ£¿Φ┐₧µÄÑπÇìτÜäµëôµë░
+        useMessageStore.getState().setReconnecting(true);
+        // σªéµ₧£µ¥Ñµ║ÉΣ║ÄΘçìΦ┐₧∩╝îσêÖΘ£ÇΦªüΘçìµû░τöƒµêÉticket
+        const { ticket } = await getSocketTicket();
+        if (ticket) {
+          socketUrl = updateUrlParameter(
+            this.options.url,
+            "ticket",
+            ticket as string,
+          );
+        }
+      }
+      // σÅû ticket µÿ»σ╝éµ¡ÑτÜä∩╝îΦ┐Öµ£ƒΘù┤σ«₧Σ╛ïσÅ»Φâ╜σ╖▓Φó½ close() Σ╕óσ╝â∩╝îµ¡ñµù╢σåìσ╗║Φ┐₧σ░▒µÿ»Σ╕Çµ¥íµ▓íΣ║║τ«íτÜäΦ┐₧µÄÑ
+      if (this.isDisposed) {
+        return;
+      }
+      // πÇîµ¡úσ£¿Θô╛µÄÑΣ╕¡πÇìµ£ƒΘù┤σ«óµ£ìσÅ»Φâ╜σ╖▓τ╗Åτ╗ôµ¥ƒΣ╝ÜΦ»¥πÇéτÑ¿µï┐σê░πÇüτ╜æτ╗£µüóσñìσÉÄπÇüτ£ƒµ¡ú new WebSocket Σ╣ïσëìσåìµƒÑΣ╕Çµ¼í∩╝î
+      // Θü┐σàìµ£ìσèíτ½»µèèΦ┐Öµ¼íΘçìΦ┐₧σ╜ôµêÉµû░Φ┐¢τ║┐∩╝îσÅêσ╗║Σ╕Çµ¥íΣ╝ÜΦ»¥πÇé
+      if (isReconnect) {
+        const stillActive = await this.queryActiveConversation();
+        if (this.isDisposed || this.isManualClose) {
+          return;
+        }
+        if (stillActive === false) {
+          await this.giveUpReconnectBecauseSessionEnded();
+          return;
+        }
+      }
+      // σ╝Çσºïσê¢σ╗║Websocket Θô╛µÄÑ
+      reportScene(
+        ReportScene.CREATE_WEBSOCKET,
+        JSON.stringify({
+          socketUrl,
+          isReconnect,
+          device: getDeviceInfo(),
+          isHandyApp: isHandyApp(),
+        }),
+      );
+      this.socket = new WebSocket(socketUrl);
+      // σÅ¬σ£¿µ╡ïΦ»ò/ΘóäσÅæτÄ»σóâΦ«░σ╜òsocketσ«₧Σ╛ï∩╝îµû╣Σ╛┐Φ░âΦ»ò
+      if (
+        ["CN-TEST", "CN-STAG", "OR-TEST", "OR-STAG"].includes(getEnvRegion())
+      ) {
+        window.win_ws = this.socket;
+      }
+      this.setupEventHandlers();
+    } catch (error) {
+      console.error("WebSocketσê¥σºïσîûσñ▒Φ┤Ñ:", error);
+      this.handleReconnect();
+      this.updateStatus(SocketConnectionStatus.ERROR);
+    }
+  }
+
+  /**
+   * ΦíÑσü┐σÅæΘÇüσñ▒Φ┤ÑτÜäµ╢êµü»
+   */
+  private async handleErrorMsgInsert() {
+    // initializeHistory Σ╝ÜΣ┐¥τòÖµ£¼σ£░µ£¬ΘÇüΦ╛╛τÜäµ░öµ│í∩╝îσ╖▓σ£¿σêùΦí¿ΘçîτÜäΣ╕ìΦâ╜σåìµÅÆΣ╕Çµ¼í∩╝îσÉªσêÖσÉîΣ╕Çµ¥íµ╢êµü»σç║τÄ░Σ╕ñΘüì
+    const renderedClientIds = new Set(
+      useMessageStore
+        .getState()
+        .msgList.map((item) => item.clientId)
+        .filter(Boolean),
+    );
+    const errorFile = errorFileLocalStore.get() as Record<
+      string,
+      UploadFileInfo
+    >;
+    if (errorFile) {
+      for (const fileId in errorFile) {
+        const fileInfo = errorFile[fileId];
+        if (fileInfo.file && !renderedClientIds.has(fileId)) {
+          const fileType = await getFileTypeFromFile(fileInfo.file);
+          webSocketService.sendMessage(
+            `{"fileName":"${fileInfo.file.name}", "fileUrl": "${URL.createObjectURL(fileInfo.file)}", "fileId": "${fileId}"}`,
+            {
+              msgType: fileType,
+              noNeedSendToWebsocket: true,
+              senderType: MessageSender.USER,
+              status: MessageStatus.ERROR,
+              clientId: fileId,
+              fileInfo,
+            },
+          );
+        }
+        errorFileLocalStore.remove(fileId);
+      }
+    }
+    for (const [, msg] of this.messageQueue) {
+      if (
+        msg.content &&
+        msg.clientId &&
+        msg.senderType === MessageSender.USER
+      ) {
+        if (!renderedClientIds.has(msg.clientId)) {
+          webSocketService.sendMessage(msg.content, {
+            msgType: msg.type,
+            noNeedSendToWebsocket: true,
+            senderType: msg.senderType,
+            status: MessageStatus.ERROR,
+            clientId: msg.clientId,
+          });
+        }
+        this.messageQueue.delete(msg.clientId);
+      }
+    }
+  }
+
+  private async handleReconnectCallback() {
+    if (this.isReconnect) {
+      try {
+        // σªéµ₧£µ£ëσÅæΘÇüΣ╕¡τÜäµ╢êµü»∩╝îσêÖΣ╕ìΦâ╜τ½ïσì│µïëσÅûσÄåσÅ▓Φ«░σ╜ò, ΦïÑσ░¥Φ»ò4µ¼íσñ▒Φ┤Ñ∩╝îσêÖµïëσÅûσÄåσÅ▓Φ«░σ╜ò
+        await autoRetryMessage(() => {
+          const { msgList } = useMessageStore.getState();
+          return msgList.every(
+            (item) =>
+              ![MessageStatus.Pending, MessageStatus.Sending].includes(
+                item.status as MessageStatus,
+              ),
+          );
+        }, 5);
+        // µïëσÄåσÅ▓σñ▒Φ┤ÑΣ╕ìΦâ╜Φ┐₧τ┤»ΦíÑσü┐ΘÇ╗Φ╛æ∩╝îσÉªσêÖµ£¬ΘÇüΦ╛╛τÜäµ╢êµü»µùóΣ╕ìσ£¿σÄåσÅ▓ΘçîπÇüΣ╣ƒΦíÑΣ╕ìσ¢₧µ¥Ñ
+        try {
+          await handleHistoryGet();
+        } catch (error) {
+          console.error("ΘçìΦ┐₧σÉÄµïëσÅûσÄåσÅ▓Φ«░σ╜òσñ▒Φ┤Ñ", error);
+        }
+        // ΦíÑσààσÅæΘÇüσñ▒Φ┤ÑτÜäµ╢êµü»
+        try {
+          await this.handleErrorMsgInsert();
+        } catch (error) {
+          console.error("insert error");
+        }
+        // σ╝ÇσÉ»socket∩╝îΘ£ÇΦªüΦ┐¢Φíîσêñµû¡σ╜ôσëìτÜäτè╢µÇü∩╝îσÅ»Φâ╜σƒ║Σ║ÄΘçìΦ┐₧σÉÄΘ£ÇΦªüσ¢₧σê░Σ╕èΣ╕Çµ¼íτÜäτè╢µÇü
+        hasActiveConversation().then((sessionInfo) => {
+          if (sessionInfo.hasActiveConversation) {
+            if (sessionInfo.status === ConversationStatus.LineUp) {
+              // ΘçìΦ┐₧µêÉσèƒσÉÄ∩╝îτè╢µÇüΣ╕║µÄÆΘÿƒΣ╕¡
+              useMessageStore
+                .getState()
+                .setCurrentChatStatus(CurrentChatStatus.LineUp);
+              webSocketService.sendMessage(
+                JSON.stringify({ text: sessionInfo.queueDesc }),
+                {
+                  msgType: MessageType.LineUp,
+                  noNeedSendToWebsocket: true,
+                  senderType: MessageSender.SYSTEM,
+                },
+              );
+            } else {
+              // ΘçìΦ┐₧µêÉσèƒσÉÄ∩╝îτè╢µÇüΣ╕║σ£¿τ║┐
+              useMessageStore
+                .getState()
+                .setCurrentChatStatus(CurrentChatStatus.Online);
+            }
+          }
+        });
+      } catch (error) {}
+    }
+  }
+
+  // Φ«╛τ╜«Σ║ïΣ╗╢σñäτÉåσÖ¿
+  private setupEventHandlers(): void {
+    if (!this.socket) return;
+
+    this.socket.onopen = async () => {
+      this.reconnectCount = 0;
+      this.updateStatus(SocketConnectionStatus.CONNECTED);
+      this.startHeartbeat();
+      this.handleReconnectCallback();
+    };
+
+    this.socket.onmessage = (event) => {
+      // τ¢æµ╡ïσ┐âΦ╖│
+      if (event.data === HeartType.PING || event.data === HeartType.PONG) {
+        if (event.data === HeartType.PING) {
+          this.socket?.send(HeartType.PONG);
+        } else {
+          this.handlePong();
+        }
+        return;
+      }
+      try {
+        const message = this.parseMessage(event.data);
+        if (!message) {
+          this.options.onError?.(new ErrorEvent("message-parse-failed"));
+          return;
+        }
+        this.options.onCommonMessageHandler?.(message);
+        if (message.headerType === HeaderType.ACK) {
+          if (message.type === MessageType.MsgEnd) {
+            // σ╜ôµ╢êµü»τ╗ôµ¥ƒµù╢∩╝îµùáΘ£Çσåìµ¢┤µû░ack
+            this.options.onMessage?.(message);
+          } else {
+            // σñäτÉåACKτí«Φ«ñ
+            this.handleAck(message);
+          }
+        } else {
+          // µö╢σê░Θ¥₧ACKµ╢êµü»µù╢σÅæΘÇüACKτí«Φ«ñ
+          if (message.id) {
+            this.sendAck(message);
+          }
+
+          // Θ¥₧ACKµ╢êµü»Σ╕èµèÑ
+          reportScene(
+            ReportScene.AGENT_MSG_RECEIVE,
+            JSON.stringify({
+              id: message.id,
+              type: message.type,
+              conversationId: message.conversationId,
+            }),
+          );
+
+          // Φ░âτö¿onMessageσ¢₧Φ░â
+          this.options.onMessage?.(message);
+        }
+      } catch (error) {
+        console.error("µ╢êµü»σñäτÉåσñ▒Φ┤Ñ:", error);
+        this.options.onError?.(new ErrorEvent("message-parse-failed"));
+      }
+    };
+
+    this.socket.onerror = (event) => {
+      console.error("WebSocketΘöÖΦ»»:", event);
+      this.options.onError?.(event);
+      this.updateStatus(SocketConnectionStatus.ERROR);
+      this.stopHeartbeat();
+      reportScene(ReportScene.SOCKET_ONERROR, JSON.stringify({ event }));
+    };
+
+    this.socket.onclose = async (event) => {
+      if (event.wasClean) {
+        console.info(
+          `socket onclose code: ${event.code}, reason: ${event.reason || "empty"}`,
+        );
+      } else {
+        console.info("socket onclose accident", "system");
+      }
+      if (
+        this.isManualClose ||
+        [
+          MANUAL_CLOSE_CODE,
+          SocketErrorCode.AuthenticationFailed,
+          SocketErrorCode.BlackList,
+          SocketErrorCode.SessionExpired,
+          SocketErrorCode.ManagerForceOutLine,
+          SocketErrorCode.CancelLineUpByUser,
+          SocketErrorCode.CloseChatByUser,
+          SocketErrorCode.LineUpTimeout,
+          SocketErrorCode.ChatTimeout,
+          SocketErrorCode.CloseChatByAgent,
+          SocketErrorCode.AgentOutOfService,
+          SocketErrorCode.EmptyAgentService,
+          SocketErrorCode.MinorProtectionDenied,
+          SocketErrorCode.MinorProtectionNeedIdv,
+          SocketErrorCode.LoggedInOtherPlace,
+          // µ£ìσèíσ╝éσ╕╕
+          SocketErrorCode.ServiceError,
+          // µ╢êµü»σñ¬σñº
+          SocketErrorCode.MessageTooBig,
+          // µ£ìσèíΘÖÉµ╡ü
+          SocketErrorCode.ServiceLimitStream,
+          // Σ╕Üσèíσ╝éσ╕╕
+          SocketErrorCode.BusinessError,
+        ].includes(event.code)
+      ) {
+        // socketµû¡σ╝ÇΣ║å, Σ╕ìΘçìΦ┐₧
+        this.updateStatus(SocketConnectionStatus.DISCONNECTED);
+      } else {
+        console.log("onerror σ░¥Φ»òΘçìΦ┐₧");
+        // σ░¥Φ»òΘçìΦ┐₧
+        this.handleReconnect();
+        this.updateStatus(SocketConnectionStatus.CLOSE);
+      }
+      if ([SocketErrorCode.BusinessError].includes(event.code)) {
+        // Φ╡░σëìτ½»µÅÉτñ║∩╝îΦ╖│Φ╜¼σ╖Ñσìò
+        useMessageStore.getState().setSocketErrorInfo({
+          type: SocketErrorInfoType.TEXT,
+          message: interpolate(getTranslations().chatInput.processError, {
+            ticketUrl: process.env.NEXT_PUBLIC_WORK_ORDER_LINK as string,
+          }),
+        });
+      }
+      // Θ£ÇΦªüµÄ¿ΘÇüτ╗Öτö¿µê╖
+      if (
+        [SocketErrorCode.BlackList, SocketErrorCode.EmptyAgentService].includes(
+          event.code,
+        )
+      ) {
+        useMessageStore.getState().setSocketErrorInfo({
+          type: SocketErrorInfoType.TEXT,
+          message: event.reason || getTranslations().chatInput.networkLost,
+        });
+        // ΦïÑΘô╛µÄÑΘöÖΦ»»∩╝îσ╝║σê╢µ╗Üσè¿σê░σ║òΘâ¿τí«Σ┐¥τö¿µê╖σÅ»Φºü
+        if (typeof window !== "undefined") {
+          window.globalData?.scrollChatToBottom?.();
+        }
+      }
+      // 4017 / 4018∩╝Üµ£¬µêÉσ╣┤Θÿ▓µèñµïªµê¬πÇéΣ╗àµ╡╖σñûσ╝╣Φ«┐Θù«σÅùΘÖÉµíå∩╝îσ¢╜σåàΣ╕ìσêñµû¡πÇé
+      if (
+        isOverseaEnv() &&
+        (event.code === SocketErrorCode.MinorProtectionDenied ||
+          event.code === SocketErrorCode.MinorProtectionNeedIdv)
+      ) {
+        useMessageStore.getState().setAccessRestrictedVisible(true);
+      }
+      // Θ£ÇΦªüµÄ¿ΘÇüτ╗Öτö¿µê╖
+      if (event.code === SocketErrorCode.AgentOutOfService) {
+        // 4015∩╝Üσ«óµ£ìΣ╕ìσ£¿σ╖ÑΣ╜£µù╢Θù┤πÇéevent.reason Σ╗àµë┐Φ╜╜ dutyRosterId∩╝î
+        // Θ£Çτö¿σà╢σ£¿τ╝ôσ¡ÿΣ╕¡τ▓╛τí«µÿáσ░äΘàìτ╜«σ╣╢σ▒òτñ║ offlineContent∩╝¢µÿáσ░äΣ╕ìσê░σêÖσ▒òτñ║σà£σ║òµûçµíêπÇé
+        const fallbackContent =
+          getTranslations().systemMsg.currentTimeNotService;
+        void getOfflineContentByDutyRosterId(event.reason)
+          .then((offlineContent) => {
+            useMessageStore.getState().setSocketErrorInfo({
+              type: SocketErrorInfoType.TEXT,
+              message: offlineContent || fallbackContent,
+            });
+          })
+          .catch(() => {
+            useMessageStore.getState().setSocketErrorInfo({
+              type: SocketErrorInfoType.TEXT,
+              message: fallbackContent,
+            });
+          });
+        // ΦïÑΘô╛µÄÑΘöÖΦ»»∩╝îσ╝║σê╢µ╗Üσè¿σê░σ║òΘâ¿τí«Σ┐¥τö¿µê╖σÅ»Φºü
+        if (typeof window !== "undefined") {
+          window.globalData?.scrollChatToBottom?.();
+        }
+      }
+      reportScene(
+        ReportScene.SOCKET_ONCLOSE,
+        `code: ${event.code}, reason: ${event.reason}`,
+      );
+      // σ╜ôσç║τÄ░socket close σêÖτ½ïσì│Σ╕èµèÑ
+      reporterInstance.flush();
+      this.stopHeartbeat();
+      this.options.onClose?.(event);
+    };
+  }
+  // σü£µ¡óσ┐âΦ╖│µúÇµ╡ï
+  stopHeartbeat() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+
+    if (this.pingTimeout) {
+      clearTimeout(this.pingTimeout);
+      this.pingTimeout = null;
+    }
+  }
+  // σ╝Çσºïσ┐âΦ╖│µúÇµ╡ï
+  startHeartbeat() {
+    this.missedPongCount = 0;
+    // σ╝Çσºïσ┐âΦ╖│
+    this.sendPing();
+
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+
+    // Φ«╛τ╜«σ«Üµù╢σÖ¿σ«Üµ£ƒσÅæΘÇüσ┐âΦ╖│
+    this.heartbeatInterval = setInterval(() => {
+      this.sendPing();
+    }, this.heartInterval);
+  }
+
+  // σñäτÉåpongσôìσ║ö
+  handlePong() {
+    this.lastPongTime = Date.now();
+    this.missedPongCount = 0;
+    // µö╢σê░pongµëìΦ»┤µÿÄΦ┐Öµ¥íΦ┐₧µÄÑτ£ƒτÜäσÅ»τö¿∩╝îµ¡ñµù╢µëìσàüΦ«╕Θçìτ╜«σ┐âΦ╖│ΘçìΦ┐₧τÜäµ¼íµò░Σ╕èΘÖÉ
+    this.heartbeatReconnectCount = 0;
+
+    if (this.pingTimeout) {
+      clearTimeout(this.pingTimeout);
+      this.pingTimeout = null;
+    }
+  }
+
+  /**
+   * σ┐âΦ╖│Φ┐₧τ╗¡Φ╢àµù╢τÜäσà£σ║òσñäτÉåπÇé
+   *
+   * σìèσ╝ÇΦ┐₧µÄÑΣ╕ï readyState Σ╗ìµÿ» OPENπÇüΣ╣ƒΣ╕ìΣ╝ÜΦºªσÅæ onclose∩╝îΦïÑΣ╕ìΣ╕╗σè¿σ║ƒσ╝âΦ┐Öµ¥íΦ┐₧µÄÑ∩╝î
+   * σÉÄτ╗¡µ╢êµü»Θâ╜Σ╝ÜΦó½ send Φ┐¢Θ╗æµ┤₧Σ╕öµï┐Σ╕ìσê░ ACK∩╝îτö¿µê╖Σ╛ºΦí¿τÄ░Σ╕║πÇîµ╢êµü»σÅæΣ╕ìσç║σÄ╗Σ╕öµùáΣ╗╗Σ╜òµÅÉτñ║πÇìπÇé
+   */
+  private handleHeartbeatDead(): void {
+    if (this.isManualClose) return;
+
+    this.stopHeartbeat();
+
+    const deadSocket = this.socket;
+    reportScene(
+      ReportScene.SOCKET_CONNECT,
+      JSON.stringify({
+        reason: "heartbeat-timeout",
+        missedPongCount: this.missedPongCount,
+        lastPingTime: this.lastPingTime,
+        lastPongTime: this.lastPongTime,
+        readyState: deadSocket?.readyState ?? null,
+      }),
+    );
+    reporterInstance.flush();
+
+    this.socket = null;
+    if (deadSocket) {
+      // σàêµæÿσ¢₧Φ░âσåìσà│Θù¡∩╝Üσìèσ╝ÇΦ┐₧µÄÑτ¡ëΣ╕ìσê░µ£ìσèíτ½»τÜä close σôìσ║ö∩╝î
+      // µ╡ÅΦºêσÖ¿µ£Çτ╗êΦíÑσÅæτÜä onclose Σ╝ÜσåìΦ╡░Σ╕Çµ¼í handleReconnect∩╝îΘÇáµêÉΘçìσñìΘçìΦ┐₧
+      deadSocket.onopen = null;
+      deadSocket.onmessage = null;
+      deadSocket.onerror = null;
+      deadSocket.onclose = null;
+      try {
+        deadSocket.close(HEARTBEAT_TIMEOUT_CLOSE_CODE, "heartbeat timeout");
+      } catch (error) {
+        console.error("σà│Θù¡σ┐âΦ╖│Φ╢àµù╢Φ┐₧µÄÑσñ▒Φ┤Ñ:", error);
+      }
+    }
+
+    this.heartbeatReconnectCount += 1;
+    if (this.heartbeatReconnectCount > MAX_HEARTBEAT_RECONNECT_ATTEMPTS) {
+      // Φ┐₧µÄÑσÅìσñìσ╗║σ╛ùΦ╡╖µ¥Ñσì┤σºïτ╗êµö╢Σ╕ìσê░ pong∩╝îσåìΘçìΦ┐₧Σ╣ƒσÅ¬µÿ»µîüτ╗¡µëôµ£ìσèíτ½»∩╝îΣ║ñτ╗Öτö¿µê╖Σ╕╗σè¿µüóσñì
+      reportScene(
+        ReportScene.SOCKET_CONNECT,
+        JSON.stringify({
+          reason: "heartbeat-reconnect-give-up",
+          heartbeatReconnectCount: this.heartbeatReconnectCount,
+        }),
+      );
+      reporterInstance.flush();
+      this.updateStatus(SocketConnectionStatus.DISCONNECTED);
+      return;
+    }
+
+    // σ┐àΘí╗σàêΦÉ╜τè╢µÇü∩╝Üconnect() σ£¿ CONNECTED / CONNECTING µù╢Σ╝Üτ¢┤µÄÑΦ┐öσ¢₧
+    this.updateStatus(SocketConnectionStatus.CLOSE);
+    // µîçµò░ΘÇÇΘü┐∩╝îΘü┐σàìµ£ìσèíτ½»σ╝éσ╕╕µ£ƒΘù┤σà¿ΘçÅσ«óµê╖τ½»Σ╗Ñσ¢║σ«ÜΦèéσÑÅσÅìσñìΘçìΦ┐₧
+    this.handleReconnect(
+      this.options.reconnectInterval! *
+        Math.pow(2, this.heartbeatReconnectCount - 1),
+    );
+  }
+
+  sendPing() {
+    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+      // σ£¿σÅæΘÇüσ┐âΦ╖│σëìµúÇµƒÑtokenΣ╕ÇΦç┤µÇº
+      this.checkTokenConsistency();
+
+      this.socket.send(HeartType.PING);
+      this.lastPingTime = Date.now();
+      authService.renewalToken();
+      // Φ«╛τ╜«Φ╢àµù╢µúÇµ╡ï
+      this.pingTimeout = setTimeout(() => {
+        if (!this.lastPongTime || this.lastPingTime > this.lastPongTime) {
+          this.missedPongCount += 1;
+          reportScene(
+            ReportScene.HEART_TIMEOUT,
+            JSON.stringify({
+              lastPingTime: this.lastPingTime,
+              lastPongTime: this.lastPongTime,
+              missedPongCount: this.missedPongCount,
+              readyState: this.socket?.readyState ?? null,
+            }),
+          );
+          if (this.missedPongCount >= MAX_MISSED_PONG_COUNT) {
+            this.handleHeartbeatDead();
+          }
+        }
+      }, 10000);
+    }
+  }
+
+  // µúÇµƒÑtokenΣ╕ÇΦç┤µÇº
+  private checkTokenConsistency(): boolean {
+    try {
+      const cookieToken = authService.getToken();
+      const loginToken = authService.getLoginToken();
+
+      // σªéµ₧£cookieΣ╕¡µ▓íµ£ëtoken∩╝îΦ»┤µÿÄτö¿µê╖σ╖▓τÖ╗σç║
+      if (!cookieToken) {
+        console.log("TokenµúÇµƒÑ: cookieΣ╕¡µ▓íµ£ëtoken∩╝îτö¿µê╖σ╖▓τÖ╗σç║");
+        this.handleTokenMismatch();
+        return false;
+      }
+
+      // σªéµ₧£µ▓íµ£ëτÖ╗σ╜òtoken∩╝îΦ»┤µÿÄΦ┐ÿµ£¬σ«îµêÉτÖ╗σ╜ò
+      if (!loginToken) {
+        console.log("TokenµúÇµƒÑ: σ░Üµ£¬σ«îµêÉτÖ╗σ╜òµ╡üτ¿ï");
+        return false;
+      }
+
+      // σªéµ₧£Σ╕ñΣ╕¬tokenΣ╕ìΣ╕ÇΦç┤∩╝îΦ»┤µÿÄσÅ»Φâ╜σ£¿σà╢Σ╗ûσ£░µû╣Θçìµû░τÖ╗σ╜òΣ║å
+      if (cookieToken !== loginToken) {
+        console.log(
+          "TokenσÅÿµ¢┤: µúÇµ╡ïσê░tokenσ╖▓µ¢┤µû░∩╝îσÅ»Φâ╜µÿ»σà╢Σ╗ûµáçτ¡╛Θí╡τÖ╗σ╜òΣ║åµû░Φ┤ªσÅ╖",
+        );
+        this.handleTokenMismatch();
+        return false;
+      }
+
+      // TokenΣ╕ÇΦç┤∩╝îτ╗ºτ╗¡µ¡úσ╕╕µ╡üτ¿ï
+      return true;
+    } catch (error) {
+      console.error("TokenΣ╕ÇΦç┤µÇºµúÇµƒÑσñ▒Φ┤Ñ:", error);
+      return false;
+    }
+  }
+
+  // σñäτÉåtokenΣ╕ìσî╣ΘàìτÜäµâàσå╡
+  private handleTokenMismatch(): void {
+    try {
+      console.log("σñäτÉåtokenΣ╕ìσî╣Θàì: τ╗ôµ¥ƒΣ╝ÜΦ»¥");
+
+      // Σ╜┐τö¿AuthServiceµ╕àτÉåtoken
+      authService.clearToken();
+
+      // σà│Θù¡WebSocketΦ┐₧µÄÑ
+      if (this.socket) {
+        this.socket.close(MANUAL_CLOSE_CODE, "TokenΣ╕ìΣ╕ÇΦç┤∩╝îτ╗ôµ¥ƒΣ╝ÜΦ»¥");
+      }
+
+      // µ╕àτÉåτ¢╕σà│τè╢µÇü
+      this.stopHeartbeat();
+      this.updateStatus(SocketConnectionStatus.DISCONNECTED);
+
+      // Φ«╛τ╜«ΘöÖΦ»»Σ┐íµü»
+      // useMessageStore.getState().setSocketErrorInfo({
+      //   type: SocketErrorInfoType.TEXT,
+      //   message: "τÖ╗σ╜òτè╢µÇüσ╖▓σñ▒µòê∩╝îΦ»╖Θçìµû░τÖ╗σ╜ò",
+      // });
+    } catch (error) {
+      console.error("σñäτÉåtokenΣ╕ìσî╣Θàìµù╢σÅæτöƒΘöÖΦ»»:", error);
+    }
+  }
+
+  // τ╗ƒΣ╕Çµ╢êµü»σÅæΘÇüµû╣µ│ò
+  private send(data: Partial<Message>): void {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      console.error("µ╢êµü»σÅæΘÇüσñ▒Φ┤Ñ: Φ┐₧µÄÑµ£¬σ░▒τ╗¬");
+      return;
+    }
+
+    const payload = typeof data === "string" ? data : JSON.stringify(data);
+    this.socket.send(payload);
+  }
+
+  // σÅæΘÇüµ╢êµü»∩╝êµö»µîüΦç¬σè¿ACKτí«Φ«ñ∩╝ë
+  public sendMessage(message: Message): string {
+    const clientId = message.clientId as string;
+    // µ╖╗σèáσê░σ╛àτí«Φ«ñΘÿƒσêù(σ«₧µù╢µ╢êµü»Σ╕ìσèáσàÑΘÿƒσêù)
+    if (message.type !== MessageNotRender.RealTime) {
+      this.messageQueue.set(clientId, message);
+    }
+
+    // σÅæΘÇüµ╢êµü»
+    this.send(message);
+
+    // σÉ»σè¿ACKτ¡ëσ╛àΦ«íµù╢σÖ¿
+    this.setupAckTimeout(clientId);
+
+    return clientId;
+  }
+
+  // σÅæΘÇüACKτí«Φ«ñ
+  private sendAck(msg: Message): void {
+    const ackConfirm = {
+      ...msg,
+      headerType: HeaderType.ACK,
+      clientTimestamp: Date.now(),
+    };
+    this.send(ackConfirm);
+  }
+
+  // σñäτÉåACKτí«Φ«ñµ╢êµü»
+  private handleAck(ackMessage: Message): void {
+    const clientId = ackMessage.clientId as string;
+    // ack τí«Φ«ñ
+    reportScene(
+      ReportScene.ACK_CONFIRM,
+      JSON.stringify({
+        id: ackMessage.id,
+        clientId,
+      }),
+    );
+
+    // µ╕àΘÖñΦ«íµù╢σÖ¿
+    this.clearAckTimeout(clientId);
+
+    // Σ╗Äµ£¬τí«Φ«ñΘÿƒσêùΣ╕¡τº╗ΘÖñ
+    this.messageQueue.delete(clientId);
+
+    // ΦºªσÅæσ¢₧Φ░â
+    this.options.onMessageAck?.(clientId, ackMessage);
+  }
+
+  // Φ«╛τ╜«ACKΦ╢àµù╢σñäτÉå
+  private setupAckTimeout(clientId: string): void {
+    if (!this.messageQueue.has(clientId)) return;
+
+    const message = this.messageQueue.get(clientId)!;
+    // µû░µ╢êµü»µ▓íµ£ë retryCount∩╝îµ¡ñσñäΦïÑσà£σ║òµêÉ maxRetries Σ╝ÜΦ«⌐Θªûµ¼íΦ╢àµù╢σ░▒τ¢┤µÄÑσêñσñ▒Φ┤Ñ∩╝îΘçìσÅæσêåµö»µ░╕Φ┐£Φ╡░Σ╕ìσê░
+    const retryCount = message.retryCount || 0;
+
+    const timer = setTimeout(() => {
+      if (!this.messageQueue.has(clientId)) {
+        // µ╢êµü»σ╖▓Φó½τí«Φ«ñ∩╝îµùáΘ£ÇσñäτÉå
+        return;
+      }
+      // Φ┐₧µÄÑΣ╕ìσÅ»τö¿µù╢Σ╕ìσåìΘçìσÅæ∩╝îΣ║ñτö▒ΘçìΦ┐₧σÉÄτÜäΦíÑσü┐ΘÇ╗Φ╛æσñäτÉå∩╝îΘü┐σàìσ╛Çµ¡╗Θô╛ΘçîΘçìσñìµèòΘÇÆ
+      const socketUnavailable =
+        !this.socket || this.socket.readyState !== WebSocket.OPEN;
+      // µúÇµƒÑµÿ»σÉªΦ╢àΦ┐çΘçìΦ»òµ¼íµò░
+      if (retryCount >= this.options.maxRetries! || socketUnavailable) {
+        // µ╢êµü»σÅæΘÇüσ╜╗σ║òσñ▒Φ┤Ñ
+        // this.messageQueue.delete(clientId);
+        this.options.onMessageFailure?.(clientId);
+        return;
+      }
+
+      // µ¢┤µû░ΘçìΦ»òµ¼íµò░
+      message.retryCount = (message.retryCount || 0) + 1;
+      message.timestamp = Date.now();
+      this.messageQueue.set(clientId, message);
+
+      console.warn(
+        `µ╢êµü»${clientId}µ£¬τí«Φ«ñ∩╝îσ░¥Φ»òΘçìσÅæ(${message.retryCount}/${this.options.maxRetries})`,
+      );
+
+      // σ░¥Φ»òΘçìσÅæµ╢êµü»
+      this.send(message);
+
+      // Θçìµû░Φ«╛τ╜«Φ╢àµù╢
+      this.setupAckTimeout(clientId);
+    }, this.options.ackTimeout);
+
+    this.pendingAckTimers.set(clientId, timer);
+  }
+
+  // µ╕àΘÖñACKτ¡ëσ╛àΦ«íµù╢σÖ¿
+  private clearAckTimeout(msgId: string): void {
+    const timer = this.pendingAckTimers.get(msgId);
+    if (timer) {
+      clearTimeout(timer);
+      this.pendingAckTimers.delete(msgId);
+    }
+  }
+
+  // µû¡τ║┐ΘçìΦ┐₧µ£║σê╢
+  public async handleReconnect(delayMs?: number) {
+    if (this.isManualClose || this.isDisposed) return;
+
+    // τ¡ëσ╛àΘçìΦ┐₧Θù┤ΘÜöµ£ƒΘù┤Σ╣ƒσ▒₧Σ║ÄΘçìΦ┐₧Φ┐çτ¿ï∩╝îΘ£Çσàêτ╜«Σ╜ì∩╝îΘü┐σàìµÅÉτñ║µ¥íΘù¬µû¡
+    useMessageStore.getState().setReconnecting(true);
+
+    const stillActive = await this.queryActiveConversation();
+    // σ░¥Φ»òΘçìΦ┐₧σëì∩╝îΦïÑτö¿µê╖Σ╕ìσ£¿Σ╝ÜΦ»¥∩╝îσêÖΣ╕ìΘçìΦ┐₧
+    if (stillActive === false) {
+      await this.giveUpReconnectBecauseSessionEnded();
+      return;
+    }
+
+    if (this.reconnectCount >= this.options.maxReconnectAttempts!) {
+      console.error(
+        `σ╖▓Φ╛╛σê░µ£ÇσñºΘçìΦ┐₧µ¼íµò░(${this.options.maxReconnectAttempts})∩╝îσü£µ¡óΘçìΦ┐₧`,
+      );
+      this.updateStatus(SocketConnectionStatus.DISCONNECTED);
+      return;
+    }
+
+    this.clearReconnectTimer();
+    this.reconnectCount++;
+
+    this.reconnectTimer = setTimeout(() => {
+      void this.connectIfSessionStillActive();
+    }, delayMs ?? this.options.reconnectInterval);
+  }
+
+  /**
+   * σÉÄσÅ░σå╗τ╗ôΣ╝ÜµèèσçáτºÆτÜäΘçìΦ┐₧σ«Üµù╢σÖ¿µÄ¿Φ┐ƒσê░σ¢₧σëìσÅ░µëìµëºΦíîπÇé
+   * µÄÆσ«Üµù╢σÖ¿µù╢µƒÑσê░τÜäπÇîΦ┐ÿµ£ëΣ╝ÜΦ»¥πÇìΦ┐Öµù╢σÅ»Φâ╜σ╖▓τ╗ÅΦ┐çµ£ƒ∩╝îσ╗║Φ┐₧σëìσ┐àΘí╗σåìµƒÑΣ╕Çµ¼íπÇé
+   */
+  private async connectIfSessionStillActive() {
+    if (this.isManualClose || this.isDisposed) return;
+
+    const stillActive = await this.queryActiveConversation();
+    if (this.isManualClose || this.isDisposed) return;
+    if (stillActive === false) {
+      await this.giveUpReconnectBecauseSessionEnded();
+      return;
+    }
+
+    this.options.onReconnect?.(this.reconnectCount);
+    console.log("reconnectTimer", this.reconnectCount);
+    this.connect(true);
+  }
+
+  /** true µ£ëΣ╝ÜΦ»¥∩╝îfalse µ▓íµ£ë∩╝înull µƒÑΦ»óσñ▒Φ┤Ñ∩╝êµ▓┐τö¿σÄƒΘÇ╗Φ╛æ∩╝îΣ╗ìτä╢σ░¥Φ»òσ╗║Φ┐₧∩╝ë */
+  private async queryActiveConversation(): Promise<boolean | null> {
+    try {
+      const sessionInfo = await hasActiveConversation();
+      return !!sessionInfo.hasActiveConversation;
+    } catch (error) {
+      console.error("ΘçìΦ┐₧µù╢∩╝îτ╜æτ╗£Σ╛¥τä╢Σ╕ìΘÇÜ");
+      return null;
+    }
+  }
+
+  private async giveUpReconnectBecauseSessionEnded() {
+    this.clearReconnectTimer();
+    useMessageStore.getState().setReconnecting(false);
+    try {
+      await handleHistoryGet();
+    } catch (error) {
+      console.error("Σ╝ÜΦ»¥σ╖▓τ╗ôµ¥ƒ∩╝îµïëσÅûσÄåσÅ▓σñ▒Φ┤Ñ", error);
+    }
+    this.updateStatus(SocketConnectionStatus.DISCONNECTED);
+  }
+
+  // µ╢êµü»Φºúµ₧É
+  private parseMessage(data: string): Message | null {
+    try {
+      return JSON.parse(data);
+    } catch {
+      return null;
+    }
+  }
+
+  // µ¢┤µû░Φ┐₧µÄÑτè╢µÇü∩╝êΣ╝áΦ╛ôσ▒é DISCONNECTED/ERROR Σ╕ìσåìΦç¬σè¿ ChatEnd∩╝îτö▒µÄÑσÅúσÉîµ¡ÑΣ╝ÜΦ»¥∩╝ë
+  private updateStatus(newStatus: SocketConnectionStatus): void {
+    useMessageStore.getState().setConnectionStatus(newStatus);
+    this.status = newStatus;
+    this.options.onReadyStateChange?.(this.status);
+
+    // ΘçìΦ┐₧µêÉσèƒπÇüσ╜╗σ║òµö╛σ╝âΘçìΦ┐₧πÇüΣ╝áΦ╛ôσ▒éσ╝éσ╕╕∩╝îΘâ╜µäÅσæ│τ¥ÇΘçìΦ┐₧Φ┐çτ¿ïτ╗ôµ¥ƒ
+    if (
+      [
+        SocketConnectionStatus.CONNECTED,
+        SocketConnectionStatus.DISCONNECTED,
+        SocketConnectionStatus.ERROR,
+      ].includes(newStatus)
+    ) {
+      useMessageStore.getState().setReconnecting(false);
+    }
+
+    // Σ╗àσ£¿πÇîΣ╝ÜΦ»¥σ╖▓τ╗ôµ¥ƒµêûΣ╝áΦ╛ôσ▒éσ╝éσ╕╕πÇìµù╢µïë hasActiveConversationπÇé
+    // CLOSE σñÜτö¿Σ║Äµû¡τ║┐σÉÄσì│σ░å handleReconnect τÜäΣ╕¡Θù┤µÇü∩╝îΘóæτ╣üΘçìΦ┐₧µù╢ΦïÑσÉîµ¡ÑΣ╝Üσê╖σ▒ÅΦ»╖µ▒é∩╝¢
+    // µö╛σ╝âΘçìΦ┐₧µêûµÿÄτí«µû¡σ╝Çµù╢Σ╝ÜΦÉ╜σê░ DISCONNECTED∩╝îΣ╗ìΣ╝ÜσÉîµ¡ÑπÇé
+    if (
+      [
+        SocketConnectionStatus.DISCONNECTED,
+        SocketConnectionStatus.ERROR,
+      ].includes(newStatus)
+    ) {
+      void syncImSessionFromActiveConversationApi();
+    }
+  }
+
+  // σ«ëσà¿σà│Θù¡Φ┐₧µÄÑ
+  public close(code?: number, reason?: string): void {
+    this.isManualClose = code === MANUAL_CLOSE_CODE;
+    useMessageStore.getState().setReconnecting(false);
+    this.heartbeatReconnectCount = 0;
+    // Φ░âτö¿µû╣σà│µÄëΦ┐₧µÄÑσÉÄσì│Σ╕óσ╝âµ£¼σ«₧Σ╛ï∩╝îσ╛àΦºªσÅæτÜäΘçìΦ┐₧Σ╕ìΦâ╜σåìµèèσ«âµïëΦ╡╖µ¥Ñσ╗║µû░Φ┐₧µÄÑ
+    this.isDisposed = true;
+    this.clearReconnectTimer();
+    this.stopHeartbeat();
+    // µ╕àΘÖñµëÇµ£ëACKΦ«íµù╢σÖ¿
+    this.pendingAckTimers.forEach((timer) => clearTimeout(timer));
+    this.pendingAckTimers.clear();
+
+    if (this.socket) {
+      if (this.socket.readyState === WebSocket.OPEN) {
+        // σà│Θù¡Φ┐₧µÄÑ
+        this.socket.close(code || MANUAL_CLOSE_CODE, reason || "τö¿µê╖Σ╕╗σè¿σà│Θù¡");
+      } else {
+        const pendingSocket = this.socket;
+        this.socket = null;
+        // µÅíµëïΣ╕¡τÜäΦ┐₧µÄÑΣ╕ìΣ╝Üσ¢áΣ╕║Σ╕óµÄëσ╝òτö¿ΦÇîσü£Σ╕ï∩╝Üσ«âΣ╗ìΣ╝ÜΦ┐₧Σ╕èσ╣╢τ╗ºτ╗¡ΦºªσÅæ onmessageπÇé
+        // Σ╕Äµ¢┐µìóσ«âτÜäµû░Φ┐₧µÄÑσ╣╢σ¡ÿµù╢∩╝îσÉîΣ╕Çµ¥íµ╢êµü»Σ╝ÜΦó½µö╢Σ╕ñµ¼íπÇüσ£¿σêùΦí¿Θçîµ╕▓µƒôµêÉΣ╕ñµ¥íπÇé
+        // σàêµæÿσ¢₧Φ░âσåìτ£ƒµ¡ú close∩╝îΘü┐σàìτòÖΣ╕ïΦ┐Öµá╖Σ╕Çµ¥íσ¡ñσä┐Φ┐₧µÄÑπÇé
+        if (pendingSocket.readyState === WebSocket.CONNECTING) {
+          pendingSocket.onopen = null;
+          pendingSocket.onmessage = null;
+          pendingSocket.onerror = null;
+          pendingSocket.onclose = null;
+          try {
+            pendingSocket.close(
+              code || MANUAL_CLOSE_CODE,
+              reason || "τö¿µê╖Σ╕╗σè¿σà│Θù¡",
+            );
+          } catch (error) {
+            console.error("σà│Θù¡µÅíµëïΣ╕¡τÜäΦ┐₧µÄÑσñ▒Φ┤Ñ:", error);
+          }
+        }
+        this.updateStatus(SocketConnectionStatus.CLOSE);
+        // Θ¥₧ΘçìΦ┐₧σ£║µÖ»∩╝Üµ£¬ OPEN σì│σà│Θù¡∩╝îΣ╗ìΘ£ÇΣ╝ÜΦ»¥σ»╣Θ╜É∩╝êΣ╕ìσåìΣ╗Ä updateStatus(CLOSE) τ╗ƒΣ╕ÇΦºªσÅæ∩╝ë
+        void syncImSessionFromActiveConversationApi();
+      }
+    }
+  }
+
+  // ΦÄ╖σÅûΦ┐₧µÄÑτè╢µÇü
+  public getStatus(): SocketConnectionStatus | null {
+    return this.status;
+  }
+
+  // µ╕àτÉåΘçìΦ┐₧Φ«íµù╢σÖ¿
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+}
+
+export default IMWebSocketClient;
+

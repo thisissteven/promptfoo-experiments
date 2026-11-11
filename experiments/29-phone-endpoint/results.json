@@ -1,0 +1,215 @@
+{
+  "phone": "197***06",
+  "tests": [
+    {
+      "base": "https://support.bambulab.com",
+      "label": "own",
+      "phone": "197***06",
+      "status": 200,
+      "ms": 1241,
+      "code": "000000",
+      "dataType": "null",
+      "count": null,
+      "keys": null
+    },
+    {
+      "base": "https://support.bambulab.com",
+      "label": "own+86",
+      "phone": "861***06",
+      "status": 200,
+      "ms": 436,
+      "code": "000000",
+      "dataType": "null",
+      "count": null,
+      "keys": null
+    },
+    {
+      "base": "https://support.bambulab.com",
+      "label": "own+plus86",
+      "phone": "+86***06",
+      "status": 200,
+      "ms": 659,
+      "code": "000000",
+      "dataType": "null",
+      "count": null,
+      "keys": null
+    },
+    {
+      "base": "https://support.bambulab.com",
+      "label": "own-spaces",
+      "phone": "197***06",
+      "status": 200,
+      "ms": 1192,
+      "code": "000000",
+      "dataType": "null",
+      "count": null,
+      "keys": null
+    },
+    {
+      "base": "https://support.bambulab.com",
+      "label": "own-dashes",
+      "phone": "197***06",
+      "status": 200,
+      "ms": 388,
+      "code": "000000",
+      "dataType": "null",
+      "count": null,
+      "keys": null
+    },
+    {
+      "base": "https://support.bambulab.com",
+      "label": "own-leading0",
+      "phone": "019***06",
+      "status": 200,
+      "ms": 375,
+      "code": "000000",
+      "dataType": "null",
+      "count": null,
+      "keys": null
+    },
+    {
+      "base": "https://support.bambulab.com",
+      "label": "own-last-digit",
+      "phone": "197***00",
+      "status": 200,
+      "ms": 671,
+      "code": "000000",
+      "dataType": "null",
+      "count": null,
+      "keys": null
+    },
+    {
+      "base": "https://support.bambulab.com",
+      "label": "fake",
+      "phone": "199***00",
+      "status": 200,
+      "ms": 396,
+      "code": "000000",
+      "dataType": "null",
+      "count": null,
+      "keys": null
+    },
+    {
+      "base": "https://support.bambulab.com",
+      "label": "empty",
+      "phone": "***",
+      "status": 200,
+      "ms": 361,
+      "code": "B00110",
+      "dataType": "null",
+      "count": null,
+      "keys": null
+    },
+    {
+      "base": "https://support.bambulab.cn",
+      "label": "own",
+      "phone": "197***06",
+      "status": 200,
+      "ms": 1047,
+      "code": "000000",
+      "dataType": "null",
+      "count": null,
+      "keys": null
+    },
+    {
+      "base": "https://support.bambulab.cn",
+      "label": "own+86",
+      "phone": "861***06",
+      "status": 200,
+      "ms": 762,
+      "code": "000000",
+      "dataType": "null",
+      "count": null,
+      "keys": null
+    },
+    {
+      "base": "https://support.bambulab.cn",
+      "label": "own+plus86",
+      "phone": "+86***06",
+      "status": 200,
+      "ms": 815,
+      "code": "000000",
+      "dataType": "null",
+      "count": null,
+      "keys": null
+    },
+    {
+      "base": "https://support.bambulab.cn",
+      "label": "own-spaces",
+      "phone": "197***06",
+      "status": 200,
+      "ms": 774,
+      "code": "000000",
+      "dataType": "null",
+      "count": null,
+      "keys": null
+    },
+    {
+      "base": "https://support.bambulab.cn",
+      "label": "own-dashes",
+      "phone": "197***06",
+      "status": 200,
+      "ms": 704,
+      "code": "000000",
+      "dataType": "null",
+      "count": null,
+      "keys": null
+    },
+    {
+      "base": "https://support.bambulab.cn",
+      "label": "own-leading0",
+      "phone": "019***06",
+      "status": 200,
+      "ms": 724,
+      "code": "000000",
+      "dataType": "null",
+      "count": null,
+      "keys": null
+    },
+    {
+      "base": "https://support.bambulab.cn",
+      "label": "own-last-digit",
+      "phone": "197***00",
+      "status": 200,
+      "ms": 702,
+      "code": "000000",
+      "dataType": "null",
+      "count": null,
+      "keys": null
+    },
+    {
+      "base": "https://support.bambulab.cn",
+      "label": "fake",
+      "phone": "199***00",
+      "status": 200,
+      "ms": 762,
+      "code": "000000",
+      "dataType": "null",
+      "count": null,
+      "keys": null
+    },
+    {
+      "base": "https://support.bambulab.cn",
+      "label": "empty",
+      "phone": "***",
+      "status": 200,
+      "ms": 127,
+      "code": "B00110",
+      "dataType": "null",
+      "count": null,
+      "keys": null
+    }
+  ],
+  "timing": {
+    "own": [
+      380,
+      444,
+      574
+    ],
+    "fake": [
+      421,
+      436,
+      6728
+    ]
+  }
+}

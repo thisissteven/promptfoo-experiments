@@ -1,0 +1,1214 @@
+﻿
+===== webpack://_N_E/./app/services/trackSession.ts =====
+
+import { v4 as uuidv4 } from "uuid";
+import { isHandyApp } from "../utils/device";
+import { isOverseaEnv } from "../utils/env";
+
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+
+const STORAGE_KEYS = {
+  SESSION_ID: "track_session_id",
+  LAST_ACTIVE: "track_last_active",
+  // µ┤╗Φ╖â tab Θ¢åσÉê∩╝Ü{ [tabId]: lastHeartbeatMs }
+  // µ¢┐Σ╗úµùºτÜä track_tab_count∩╝êread-modify-write Φ«íµò░σÖ¿σ¡ÿσ£¿σ╣╢σÅæτ½₧µÇü∩╝ÜσñÜ tab
+  // σÉîµù╢σÉ»σè¿ / σà│Θù¡µù╢Σ╕óµ¢┤µû░ ΓåÆ µ£½ tab σà│Θù¡µù╢Σ╗ì > 0 µ╝ÅσÅæ session_end∩╝îµêûµÅÉσëì
+  // σ╜ÆΘ¢╢σñÜσÅæ session_end∩╝îσà│Φüö known-issues πÇîsession Σ╕ìΘù¡τÄ»πÇìτÄ░Φ▒í∩╝ëπÇé
+  // µö╣τö¿ tabId Θ¢åσÉê + σ┐âΦ╖│Φ┐çµ£ƒµ¿íσ╝Å∩╝Üσó₧σêáσƒ║Σ║Ä key ΦÇîΘ¥₧µò░σÇ╝∩╝îσ╣éτ¡ëΣ╕öΦç¬µäê
+  ACTIVE_TABS: "track_active_tabs",
+  SESSION_START_TIME: "track_session_start_time",
+  TEMP_USER_ID: "track_temp_user_id",
+  ENDED_SESSION_IDS: "track_ended_session_ids",
+  PENDING_LOGIN_REDIRECT: "track_pending_login_redirect",
+  // µ£ÇΦ┐æΣ╕Çµ¼íτÖ╗σ╜òµêÉσèƒτÜä cusId σ┐½τàº∩╝îτö¿Σ║ÄπÇîhandy Φç¬σè¿τ╗¡ tokenπÇìτ¡ëσ£║µÖ»∩╝Ü
+  //   token Φ┐çµ£ƒ ΓåÆ AuthService.clearToken µèè login_info µ╕àµÄë ΓåÆ
+  //   getInitialUid() Σ╗Ä login_info σà£σ║òΦ»╗Σ╕ìσê░ ΓåÆ reload σÉÄΘªûσ▒Å session_start
+  //   τÜä uid="" ΓåÆ Φ┐¥σÅì PRD R3 πÇîτÖ╗σ╜òµÇüΘªûσ▒Å uid σ┐àΘí╗µ£ëσÇ╝πÇìπÇé
+  // σ£¿ setToken µù╢σÉîµ¡ÑσåÖσàÑµ¡ñ key∩╝êτï¼τ½ïΣ║Ä login_info∩╝îclearToken Σ╕ìµ╕à∩╝ë∩╝î
+  // σì│Σ╜┐ login_info σ╖▓Φó½µ╕à∩╝îΣ╗ìΦâ╜µï┐σê░Σ╕èΣ╕Çµ¼íτÜä cusId Σ╜£Σ╕║µ£ÇσÉÄσà£σ║ò
+  LAST_UID: "track_last_uid",
+} as const;
+
+const TEMP_SESSION_KEY = "track_temp_session_id";
+// σ╜ôσëì tab τÜäσö»Σ╕ÇµáçΦ»å∩╝îsessionStorage ΘÖÉσ«Ü ΓåÆ σÉîΣ╕Ç tab σåàτ¿│σ«Ü∩╝îΣ╕ìΦ╖¿ tab
+const TAB_ID_KEY = "track_tab_id";
+
+// σ╖▓Σ╕èµèÑΦ┐ç session_end τÜä sessionId µ£ÇσñÜΣ┐¥τòÖσñÜσ░æΣ╕¬∩╝îΘü┐σàì localStorage µùáΘÖÉσó₧Θò┐
+const ENDED_SESSION_IDS_MAX = 50;
+
+// σ┐âΦ╖│Φ┐çµ£ƒΘÿêσÇ╝∩╝ÜΦ╢àΦ┐çµ¡ñµù╢Θò┐µ£¬σê╖µû░ lastHeartbeat ΦºåΣ╕║Φ»Ñ tab σ╖▓µ¡╗
+// σÅûσÇ╝Θ£Ç > σ┐âΦ╖│Θù┤ΘÜö∩╝ê10s∩╝ë+ µ╡ÅΦºêσÖ¿Φèéµ╡üσ«╣σ╖«∩╝êΘÜÉΦùÅ tab setInterval Φó½Φèéµ╡üσê░ 1Hz∩╝î
+// µ₧üτ½»µâàσå╡ 1s Σ╕Çµ¼íΣ╗ìΦâ╜σ£¿ 30s σåàµëôσê░Φç│σ░æΣ╕Çµïì∩╝ë∩╝îσÉîµù╢ < SESSION_TIMEOUT_MS 30min
+// Θÿ▓µ¡óπÇîσà¿Θâ¿ tab µ¡╗Σ║å 30min µëìΦó½σÅæτÄ░πÇìµ╝ÅσÅæ session_end
+const TAB_HEARTBEAT_TIMEOUT_MS = 30 * 1000;
+
+// ============================================================================
+// Θÿ▓σ╛íµÇº storage σ╖Ñσà╖
+// ============================================================================
+// ΦâîµÖ»∩╝ÜQA τÄ»σóâΦºéµ╡ïσê░πÇîsession_start payload µ£ë sessionId, Σ╜å localStorage Σ╕èτÜä
+// track_session_id 8s σÉÄΣ╗ìΣ╕║ nullπÇì(known-issues.md #2)πÇéΣ╕ÜσèíΣ╛ºµ▓íµ£ëΣ╗╗Σ╜ò
+// removeItem/clear Φ░âτö¿ (σ╖▓ grep σà¿ΘçÅΣ╗úτáü), SDK σåàµá╕Σ╣ƒΣ╕ìτó░ storage; τ£ƒσ¢áσÅ»Φâ╜µÿ»
+// µ╡ÅΦºêσÖ¿σ▒éΘ¥óτÜä setItem Θ¥ÖΘ╗ÿσñ▒Φ┤Ñ / SecurityError / ΦÇü bundle τ╝ôσ¡ÿτ¡ëµùáµ│ò 100%
+// µö╢µò¢τÜäτÄ»σóâσ¢áτ┤áπÇé
+//
+// µ£¼σ▒éσ╖Ñσà╖σüÜ 3 Σ╗╢Σ║ï:
+//   1. try/catch σîàΦú╣µëÇµ£ë storage µôìΣ╜£, Σ╗╗Σ╜òµè¢ΘöÖΘâ╜Φó½µìòΦÄ╖ΦÇîΣ╕ìµÿ»σåÆµ│í
+//   2. setItem σÉÄτ½ïσê╗σ¢₧Φ»╗µáíΘ¬î, σæ╜Σ╕¡"setItem Σ╕ìµè¢Σ╜åσÇ╝µ£¬µîüΣ╣àσîû"τÜäΦ╛╣τ╝ÿ case
+//   3. σÉîµ¡ÑσåÖσàÑµ¿íσ¥ùτ║ºσåàσ¡ÿτ╝ôσ¡ÿ; σì│Σ╛┐ storage σ«îσà¿Σ╕ìσÅ»τö¿, σÉîΣ╕Ç tab τöƒσæ╜σæ¿µ£ƒσåà
+//      Σ╣ƒΦâ╜Σ┐¥Φ»ü sessionId / lastActive τ¡ëτè╢µÇüΦç¬µ┤╜, Σ╕ìΣ╝Üσç║τÄ░"Σ║ïΣ╗╢ a µÉ║σ╕ªτÜä
+//      sessionId Σ╕ÄΣ╕ïΣ╕ÇτºÆΣ║ïΣ╗╢ b µÉ║σ╕ªτÜäΣ╕ìΣ╕ÇΦç┤"
+
+const memLocalCache: Record<string, string> = {};
+const memSessionCache: Record<string, string> = {};
+
+let warnedSetFailure = false;
+let warnedReadback = false;
+
+function warnSetFailure(key: string, err: unknown): void {
+  if (warnedSetFailure) return;
+  warnedSetFailure = true;
+  console.warn("[track] storage setItem threw", { key, err });
+}
+
+function warnReadback(
+  key: string,
+  expected: string,
+  actual: string | null,
+): void {
+  if (warnedReadback) return;
+  warnedReadback = true;
+  console.warn("[track] storage setItem readback mismatch", {
+    key,
+    expected,
+    actual,
+  });
+}
+
+export function safeLocalSet(key: string, value: string): boolean {
+  memLocalCache[key] = value;
+  if (typeof localStorage === "undefined") return false;
+  try {
+    localStorage.setItem(key, value);
+  } catch (err) {
+    warnSetFailure(key, err);
+    return false;
+  }
+  try {
+    const actual = localStorage.getItem(key);
+    if (actual !== value) {
+      warnReadback(key, value, actual);
+      return false;
+    }
+  } catch {
+    return false;
+  }
+  return true;
+}
+
+export function safeLocalGet(key: string): string | null {
+  if (typeof localStorage !== "undefined") {
+    try {
+      const v = localStorage.getItem(key);
+      if (v !== null) return v;
+    } catch {
+      // σñ▒Φ┤Ñσ¢₧ΘÇÇσê░σåàσ¡ÿτ╝ôσ¡ÿ
+    }
+  }
+  return Object.prototype.hasOwnProperty.call(memLocalCache, key)
+    ? memLocalCache[key]
+    : null;
+}
+
+function safeSessionSet(key: string, value: string): boolean {
+  memSessionCache[key] = value;
+  if (typeof sessionStorage === "undefined") return false;
+  try {
+    sessionStorage.setItem(key, value);
+    return true;
+  } catch (err) {
+    warnSetFailure(key, err);
+    return false;
+  }
+}
+
+function safeSessionGet(key: string): string | null {
+  if (typeof sessionStorage !== "undefined") {
+    try {
+      const v = sessionStorage.getItem(key);
+      if (v !== null) return v;
+    } catch {
+      // σñ▒Φ┤Ñσ¢₧ΘÇÇσê░σåàσ¡ÿτ╝ôσ¡ÿ
+    }
+  }
+  return Object.prototype.hasOwnProperty.call(memSessionCache, key)
+    ? memSessionCache[key]
+    : null;
+}
+
+export function getTempUserId(): string {
+  let id = safeLocalGet(STORAGE_KEYS.TEMP_USER_ID);
+  if (!id) {
+    id = uuidv4();
+    safeLocalSet(STORAGE_KEYS.TEMP_USER_ID, id);
+  }
+  return id;
+}
+
+/**
+ * µîüΣ╣àσîûµ£ÇΦ┐æΣ╕Çµ¼íτÖ╗σ╜òµêÉσèƒτÜä cusId∩╝îΣ╜£Σ╕║πÇîlogin_info σ╖▓Φó½µ╕àτ⌐║πÇìσ£║µÖ»τÜäσà£σ║ò
+ *
+ * ΦºªσÅæτé╣∩╝ÜAuthService.setToken(token, info) ΓåÆ setLastUid(info.cusInfo.cusId)
+ * µ╢êΦ┤╣τé╣∩╝ÜgetInitialUid() µ£½Σ╜ìσà£σ║òΘô╛
+ * Σ╕ìµ╕àΘÖñ∩╝ÜclearToken() / logout() Θâ╜Σ╕ìµ╕àµ¡ñ key∩╝îΦ╖¿ token σæ¿µ£ƒµîüΣ╣à
+ */
+export function setLastUid(uid: string): void {
+  if (!uid) return;
+  safeLocalSet(STORAGE_KEYS.LAST_UID, uid);
+}
+
+function getLastUid(): string {
+  return safeLocalGet(STORAGE_KEYS.LAST_UID) || "";
+}
+
+/**
+ * σÉîµ¡ÑΦ»╗σÅûΘªûσ▒Å cusId∩╝îσà£Σ╜Å"τÖ╗σ╜òµÇüΘªûµ¼í render µù╢ AuthProvider.user Φ┐ÿσ£¿
+ * σ╝éµ¡Ñ hydrate"τÜäτ¬ùσÅúµ£ƒπÇé
+ *
+ * µù╢σ║ÅΘù«Θóÿ∩╝Ü
+ *   1. AuthProvider Θªûµ¼í render µù╢ user=null (state initial)
+ *   2. TrackProvider Σ╜£Σ╕║σ¡Éτ╗äΣ╗╢Φ╖ƒτ¥Ç render∩╝îuseCurrentUser() µï┐σê░ null
+ *   3. TrackProvider.useEffect Φ╖æ tracker.init({ uid: user?.cusId || "" })
+ *      ΓåÆ µ¡ñµù╢ AuthProvider τÜä checkAuth() Φ┐ÿσ£¿σ╝éµ¡ÑΦ»╗ localStorage∩╝î
+ *      Θªûµ¥í session_start Σ╕èµèÑ uid=""
+ *   4. checkAuth σ«îµêÉ ΓåÆ setUser ΓåÆ ΦºªσÅæτ¼¼Σ║îΣ╕¬ useEffect τÜä updateBaseData
+ *      Σ╜åτ¼¼Σ╕Çµ¥í session_start Σ║ïΣ╗╢σ╖▓σÅæσç║, uid µ░╕Φ┐£µÿ» "" (Φ┐¥σÅì PRD R3)
+ *
+ * σà£σ║òΘô╛Σ╝ÿσàêτ║º∩╝Ü
+ *   1. localStorage.login_info.cusInfo.cusId
+ *      ΓåÆ σ╕╕ΦºäτÖ╗σ╜òµÇüΦ┐¢σàÑΘí╡Θ¥ó / token Σ╗ìµ£ëµòêµù╢
+ *   2. localStorage.track_last_uid∩╝êΣ╗àσ£¿ isHandyApp() Σ╕ïσÉ»τö¿∩╝ë
+ *      ΓåÆ handy Φç¬σè¿τ╗¡ token σ£║µÖ»∩╝ÜclearToken σ╖▓τ╗Åµèè login_info µ╕àµÄë∩╝î
+ *      Σ╜å AuthProvider σ┐àτä╢Σ╝ÜΦ╡░ fetchHandyAppLogin τ╗¡Σ╕èσÉîΣ╕Çτö¿µê╖Φ║½Σ╗╜∩╝î
+ *      µëÇΣ╗Ñτö¿ LAST_UID σà£σ║òµÿ»σÉêµ│òτÜä∩╝êµ£Çσ¥ÅσÉÄτ╗¡ updateBaseData µáíσçå∩╝ëπÇé
+ *      ΓåÆ PC / µ╡ÅΦºêσÖ¿τ½» token Φ┐çµ£ƒ reload σÉÄΦ┐¢σàÑ"µ╕╕σ«óµ¿íσ╝Å"∩╝îuser µ░╕Φ┐£µÿ» null∩╝î
+ *      µ¡ñµù╢ΦïÑτö¿ LAST_UID σà£σ║òΣ╝ÜΦ«⌐µ╕╕σ«ó session ΘöÖΦ»»σ£░µÉ║σ╕ªΣ╕èΣ╕Çµ¼íτÜä cusId∩╝î
+ *      µò░Σ╗ôΣ╛ºσç║τÄ░πÇîσÉîΣ╕Ç session σåà session_start σ╕ª uid∩╝îσÉÄτ╗¡Σ║ïΣ╗╢ uid Σ╕║τ⌐║πÇì
+ *      τÜäΦ»íσ╝éµò░µì«∩╝¢Φ╖¿Φ┤ªσÅ╖ / Φ«╛σñçσà¼τö¿σ£║µÖ»Σ╕ïΦ┐ÿΣ╝ÜΘÇáµêÉσ╜Æσ¢áΘöÖΣ╜ìπÇéσ¢áµ¡ñ PC τ½»
+ *      σ┐àΘí╗τ¢┤µÄÑΦ┐öσ¢₧τ⌐║Σ╕▓∩╝îΦ«⌐µ╕╕σ«ó session σà¿τ¿ïΣ┐¥µîü uid=""
+ *   3. σà£σ║òτ⌐║Σ╕▓∩╝Üτ║»µ╕╕σ«ó / σ«îσà¿µùáσÄåσÅ▓τÖ╗σ╜òµò░µì«
+ */
+export function getInitialUid(): string {
+  const raw = safeLocalGet("login_info");
+  if (raw) {
+    try {
+      const info = JSON.parse(raw);
+      const cusId = info?.cusInfo?.cusId;
+      if (cusId) return cusId;
+    } catch {
+      // fallthrough to LAST_UID / τ⌐║Σ╕▓
+    }
+  }
+  // LAST_UID σà£σ║òΣ╗àσ£¿ handy Φç¬σè¿τ╗¡ token σ£║µÖ»Σ╕ïσÉ»τö¿∩╝êΦ»ªΦºüΣ╕èµû╣µ│¿Θçè∩╝ë
+  if (isHandyApp()) {
+    return getLastUid();
+  }
+  return "";
+}
+
+export function getTempSessionId(): string {
+  let id = safeSessionGet(TEMP_SESSION_KEY);
+  if (!id) {
+    id = uuidv4();
+    safeSessionSet(TEMP_SESSION_KEY, id);
+  }
+  return id;
+}
+
+/**
+ * µ╕áΘüôτ╝ûτáüΦ»¡Φ¿Çσëìτ╝Ç∩╝Ü
+ *   - µ╡╖σñûτÄ»σóâ∩╝êOR-*∩╝ëΓåÆ en
+ *   - σ¢╜σåàτÄ»σóâ∩╝êCN-* / µ£¬Θàìτ╜«∩╝ëΓåÆ cn
+ * τö¿Σ║Äσ£¿ Handy σ«┐Σ╕╗σåàµï╝µÄÑ channel_code∩╝êσªé cn-handy / en-{HMS}∩╝ë
+ */
+function getChannelLangPrefix(): "cn" | "en" {
+  return isOverseaEnv() ? "en" : "cn";
+}
+
+/**
+ * µ¿íσ¥ùσèáΦ╜╜σì│µìòΦÄ╖τÜäσê¥σºï URL channel/from σ┐½τàº
+ *
+ * ΦâîµÖ»∩╝ÜΣ╕ÜσèíΣ╛º `useURLSearchParams` σ£¿Φç¬Φ║½ useEffect Σ╕¡Σ╝ÜΦ░âτö¿
+ * `extractAndSaveQrParams()`∩╝îµèè `?channel=xxx` µîüΣ╣àσîûσê░ sessionStorage σÉÄ
+ * ΘÇÜΦ┐ç `window.history.replaceState` Σ╗Ä URL Σ╕èµè╣µÄë∩╝êΘÿ▓µ¡óτö¿µê╖Σ┐¥σ¡ÿσ╕ªσÅéΘô╛µÄÑ
+ * σÅìσñìΦ┐¢σàÑ∩╝ëπÇéReact Σ╕¡σ¡Éτ╗äΣ╗╢ useEffect µù⌐Σ║Äτê╢τ╗äΣ╗╢ΦºªσÅæ∩╝îσ»╝Φç┤ ChatBody τ¡ë
+ * σ¡Éµáæσàêµèè URL µè╣µÄë∩╝îTrackProvider σ£¿Φç¬σ╖▒τÜä useEffect ΘçîΦ»╗ location.search
+ * µù╢σ╖▓τ╗ÅΣ╕║τ⌐║ ΓåÆ channel_code Σ╕èµèÑΣ╕║τ⌐║σ¡ùτ¼ªΣ╕▓πÇé
+ *
+ * Φ┐ÖΘçîσ£¿µ¿íσ¥ùΘªûµ¼íµ▒éσÇ╝µù╢∩╝êµù⌐Σ║ÄΣ╗╗Σ╜ò useEffect / React µÅÉΣ║ñΘÿ╢µ«╡∩╝ëσ░▒µèè
+ * channel / from τ╝ôσ¡ÿΣ╕ïµ¥Ñ∩╝îσÉÄτ╗¡σì│Σ╛┐ URL Φó½µö╣σåÖ∩╝îchannel_code Σ╗ìτä╢σçåτí«πÇé
+ *
+ * µ│¿∩╝Üµ¿íσ¥ùσ£¿ SSR / Θ¥ÖµÇüσ»╝σç║Θÿ╢µ«╡Σ╣ƒΣ╝ÜΦó½σèáΦ╜╜∩╝îµ¡ñµù╢ window Σ╕ìσ¡ÿσ£¿∩╝îσ¢₧ΘÇÇτ⌐║σÇ╝∩╝¢
+ * µ╡ÅΦºêσÖ¿τ½»Σ╝Üσåìµ¼íµ▒éσÇ╝σ╣╢σÅûσê░τ£ƒσ«₧ queryπÇé
+ */
+const initialUrlChannelSnapshot: { channel: string; from: string } = (() => {
+  if (typeof window === "undefined") return { channel: "", from: "" };
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return {
+      channel: params.get("channel") || "",
+      from: params.get("from") || "",
+    };
+  } catch {
+    return { channel: "", from: "" };
+  }
+})();
+
+/**
+ * σÉîµ¡ÑσÅ»σ╛ùτÜä channel_code σê¥σºïσÇ╝∩╝îΣ╝ÿσàêτ║º∩╝Ü
+ *   1. µ¿íσ¥ùσèáΦ╜╜σ┐½τàº ?channel=xxx∩╝êΘªûσ▒ÅΦ┐¢σàÑµù╢τÜäσÄƒσºïσÇ╝∩╝îµ£Çµ¥âσ¿ü∩╝ë
+ *   2. µ¿íσ¥ùσèáΦ╜╜σ┐½τàº ?from=xxx∩╝êσà╝σ«╣σÄåσÅ▓Θô╛µÄÑ∩╝ë
+ *   3. σ╜ôσëì URL ?channel / ?from∩╝êµ₧üτ½»σ£║µÖ»Σ╕ï SPA Φ╖»τö▒σêçµìóσÉÄσåìΦºªσÅæ∩╝ë
+ *   4. sessionStorage.qr_channel∩╝êuseURLSearchParams.extractAndSaveQrParams
+ *      Θªûµ¼íΦ┐¢σàÑµù╢µîüΣ╣àσîûτÜäσÇ╝∩╝ëΓÇöΓÇö τö¿Σ║ÄΦ╖¿ reload Σ┐¥µ┤╗µ╕áΘüôσ╜Æσ¢á∩╝Ü
+ *      σ£║µÖ»∩╝Ühandy Φç¬σè¿τ╗¡ token / Σ╕ÜσèíΦ╖│τÖ╗σ╜òσ¢₧Φ╖│∩╝îredirectToLogin Φ╖│σê░
+ *      `/connect/` Σ╕ìσ╕ª query string∩╝îµû░Θí╡Θ¥óµ¿íσ¥ùσ┐½τàºσÅûΣ╕ìσê░ channel∩╝¢
+ *      sessionStorage σ£¿σÉî tab σåàΦ╖¿ reload Σ┐¥τòÖ∩╝îΦâ╜µüóσñìσÄƒσºïµ╕áΘüôτáü
+ *   5. σ£¿ Handy σ«┐Σ╕╗σåà ΓåÆ `${lang}-handy` σìáΣ╜ì∩╝êσÉÄτ╗¡ΦïÑµíÑµÄÑσê░ HMS Σ╝ÜΦó½τ▓╛σîûΦªåτ¢û∩╝ë
+ *   6. σà£σ║òτ⌐║Σ╕▓
+ *
+ * µ│¿∩╝Üµ¡ñσç╜µò░Σ╗àΦ┐öσ¢₧σÉîµ¡Ñσ┐½τàºπÇéHMS code Φ╡░ Handy bridge σ╝éµ¡ÑΦÄ╖σÅû∩╝î
+ * τö▒ TrackProvider σ£¿ init Σ╣ïσÉÄΘÇÜΦ┐ç tracker.updateCommonData Φªåτ¢ûπÇé
+ */
+export function getChannelCode(): string {
+  if (typeof window === "undefined") return "";
+  if (initialUrlChannelSnapshot.channel)
+    return initialUrlChannelSnapshot.channel;
+  if (initialUrlChannelSnapshot.from) return initialUrlChannelSnapshot.from;
+  const params = new URLSearchParams(window.location.search);
+  const fromUrl = params.get("channel") || params.get("from");
+  if (fromUrl) return fromUrl;
+  // sessionStorage σà£σ║ò∩╝êΣ╕Ä useURLSearchParams.ts τÜä CHANNEL_STORAGE_KEY σ»╣Θ╜É∩╝ë
+  // Σ╕ìτ¢┤µÄÑ import Θü┐σàìσÆî hooks µûçΣ╗╢ΦÇªσÉê∩╝îτö¿ try/catch Θÿ▓ storage Σ╕ìσÅ»τö¿
+  try {
+    const stored = sessionStorage.getItem("qr_channel");
+    if (stored) return stored;
+  } catch {
+    // ignore
+  }
+  if (isHandyApp()) return `${getChannelLangPrefix()}-handy`;
+  return "";
+}
+
+/**
+ * µÿ»σÉªΘ£ÇΦªüσ╝éµ¡ÑΣ╗Ä Handy bridge ΦÄ╖σÅû HMS code µ¥Ñτ▓╛σîû channel_code
+ * πÇîURL Σ╝ÿσàêπÇìσÄƒσêÖ∩╝ÜURL / sessionStorage Σ╕èµÿÄτí«µîçσ«ÜΣ║å channel µù╢Σ╕ìσåìΦªåτ¢û
+ */
+export function shouldFetchHandyHms(): boolean {
+  if (typeof window === "undefined") return false;
+  if (!isHandyApp()) return false;
+  if (initialUrlChannelSnapshot.channel || initialUrlChannelSnapshot.from) {
+    return false;
+  }
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("channel") || params.get("from")) return false;
+  // sessionStorage σà£σ║ò∩╝Üreload σÉÄ URL σ╖▓µùáσÅéµò░Σ╜åΘªûσ▒ÅΣ┐¥σ¡ÿΦ┐ç channel µù╢
+  // σÉîµá╖Σ╕ìσåìτö¿ HMS Φªåτ¢û
+  try {
+    if (sessionStorage.getItem("qr_channel")) return false;
+  } catch {
+    // ignore
+  }
+  return true;
+}
+
+/**
+ * τö▒ Handy bridge Φ┐öσ¢₧τÜä hms σ¡ùµ«╡µï╝σç║τ▓╛σîûτëê channel_code
+ *
+ * hms σ¡ùµ«╡Σ╕║πÇîcode σÆîµûçµíêπÇìµ╖╖σÉêσ¡ùτ¼ªΣ╕▓∩╝êσªé `0500_0100_0001_0001 σèáτâ¡σñ▒Φ┤Ñ`∩╝ë∩╝î
+ * τ¢┤µÄÑµò┤µ«╡µï╝µÄÑΣ╜åΘ£ÇΦªüΦºäΦîâσîû∩╝Ü
+ *   - trim Σ╕ñτ½»τ⌐║τÖ╜
+ *   - σåàΘâ¿Φ┐₧τ╗¡τ⌐║τÖ╜∩╝êτ⌐║µá╝ / σê╢Φí¿τ¼ªτ¡ë∩╝ëσÉêσ╣╢µ¢┐µìóΣ╕║σìòΣ╕¬Σ╕ïσêÆτ║┐
+ *
+ * ΦºäΦîâσîûσÉÄΦïÑΣ╕║τ⌐║∩╝êσªéΣ╝áσàÑτ║»τ⌐║τÖ╜∩╝ë∩╝îΘÇÇσ¢₧ `${prefix}-handy` σìáΣ╜ì∩╝îΣ┐¥Φ»ü channel_code σºïτ╗êµ£ëµòê
+ */
+export function buildHandyHmsChannelCode(hms: string): string {
+  const prefix = getChannelLangPrefix();
+  const normalized = hms.trim().replace(/\s+/g, "_");
+  if (!normalized) return `${prefix}-handy`;
+  return `${prefix}-${normalized}`;
+}
+
+export function getSessionId(): string {
+  return safeLocalGet(STORAGE_KEYS.SESSION_ID) || "";
+}
+
+export function getLastActive(): number {
+  return parseInt(safeLocalGet(STORAGE_KEYS.LAST_ACTIVE) || "0", 10);
+}
+
+export function getSessionStartTime(): number {
+  return parseInt(safeLocalGet(STORAGE_KEYS.SESSION_START_TIME) || "0", 10);
+}
+
+// ============================================================================
+// µ┤╗Φ╖â tab Θ¢åσÉê ΓÇöΓÇö µ¢┐Σ╗úµùºτÜä track_tab_count Φ«íµò░σÖ¿
+// ============================================================================
+// µá╕σ┐âµÇ¥µâ│∩╝Üµ»ÅΣ╕¬ tab τö¿σö»Σ╕Ç tabId∩╝êsessionStorage∩╝ëµ│¿σåîσê░σà¿σ▒Ç active_tabs map∩╝î
+// σæ¿µ£ƒµÇºσåÖσàÑΦç¬σ╖▒τÜä lastHeartbeat∩╝¢Φ»╗ tab µò░µù╢σàêσëöΘÖñΦ╢àΦ┐ç heartbeat ΘÿêσÇ╝τÜäµ¡╗ tabπÇé
+//
+// Σ╝ÿσè┐ vs Φ«íµò░σÖ¿∩╝Ü
+//   1. σó₧σêáσƒ║Σ║Ä key Θ¢åσÉê∩╝îΦç¬τä╢σ╣éτ¡ë∩╝ÜσÉîΣ╕Ç tab σÅìσñì incrementTabCount Σ╕ìΣ╝ÜσüÅµÄë
+//   2. µ▓íµ£ë read-modify-write τÜäΣ╕óµ¢┤µû░ΘúÄΘÖ⌐∩╝Üσì│Σ╛┐σü╢σÅæσ╣╢σÅæ∩╝îΣ╕ïΣ╕Çµ¼íσ┐âΦ╖│σ░▒Φç¬µäê
+//   3. Φ┐¢τ¿ïσ┤⌐µ║â / σ╝║σê╢τ╗ôµ¥ƒ∩╝êkill / Φ«╛σñçµû¡τö╡∩╝ëτÜä tab Σ╝ÜΦç¬τä╢Φ┐çµ£ƒ∩╝îΣ╕ìΣ╝Üµ░╕Φ┐£σìáσÉìΘó¥
+//   4. BFCache µ£ƒΘù┤ setInterval µÜéσü£∩╝îΦç¬τä╢Φ┐çµ£ƒ ΓåÆ σñìµ┤╗µù╢Θçìµû░µ│¿σåîσì│σÅ»
+
+type ActiveTabsMap = Record<string, number>;
+
+export function getTabId(): string {
+  let id = safeSessionGet(TAB_ID_KEY);
+  if (!id) {
+    id = uuidv4();
+    safeSessionSet(TAB_ID_KEY, id);
+  }
+  return id;
+}
+
+function readActiveTabs(): ActiveTabsMap {
+  const raw = safeLocalGet(STORAGE_KEYS.ACTIVE_TABS);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    const out: ActiveTabsMap = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      if (typeof v === "number") out[k] = v;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function pruneActiveTabs(tabs: ActiveTabsMap): ActiveTabsMap {
+  const now = Date.now();
+  const out: ActiveTabsMap = {};
+  for (const [k, v] of Object.entries(tabs)) {
+    if (now - v <= TAB_HEARTBEAT_TIMEOUT_MS) out[k] = v;
+  }
+  return out;
+}
+
+function writeActiveTabs(tabs: ActiveTabsMap): void {
+  safeLocalSet(STORAGE_KEYS.ACTIVE_TABS, JSON.stringify(tabs));
+}
+
+/**
+ * µ│¿σåîσ╜ôσëì tab σê░µ┤╗Φ╖âΘ¢åσÉê∩╝êσÉîµù╢Σ╣ƒµÿ» heartbeat Σ╕Çµïì∩╝ëπÇé
+ * σ╣éτ¡ë∩╝ÜσÉîΣ╕Ç tab σñÜµ¼íΦ░âτö¿σÅ¬Σ╝Üσê╖µû░Φç¬σ╖▒τÜä lastHeartbeat
+ */
+export function incrementTabCount(): void {
+  const tabId = getTabId();
+  const tabs = pruneActiveTabs(readActiveTabs());
+  tabs[tabId] = Date.now();
+  writeActiveTabs(tabs);
+}
+
+/**
+ * σæ¿µ£ƒµÇºσ┐âΦ╖│∩╝Üσê╖µû░Φç¬σ╖▒τÜä lastHeartbeat∩╝îσ╣╢Θí║µëï prune µÄëµ¡╗ tab
+ * Φ░âτö¿µû╣σ£¿ setInterval Σ╕¡Φ░âτö¿∩╝îΘù┤ΘÜö < TAB_HEARTBEAT_TIMEOUT_MS
+ */
+export function heartbeatActiveTab(): void {
+  incrementTabCount();
+}
+
+/**
+ * µ│¿ΘöÇσ╜ôσëì tab∩╝îΦ┐öσ¢₧σë⌐Σ╜Öµ┤╗Φ╖â tab µò░πÇé
+ * Φ░âτö¿µû╣µì«µ¡ñσêñσ«ÜπÇîµÿ»σÉªµ£ÇσÉÄΣ╕ÇΣ╕¬ tab ΓåÆ µÿ»σÉªΣ╕èµèÑ session_end(page_close)πÇì
+ */
+export function decrementTabCount(): number {
+  const tabId = getTabId();
+  const tabs = pruneActiveTabs(readActiveTabs());
+  delete tabs[tabId];
+  writeActiveTabs(tabs);
+  return Object.keys(tabs).length;
+}
+
+export function getTabCount(): number {
+  return Object.keys(pruneActiveTabs(readActiveTabs())).length;
+}
+
+export function isSessionExpired(): boolean {
+  const lastActive = getLastActive();
+  if (!lastActive) return true;
+  return Date.now() - lastActive > SESSION_TIMEOUT_MS;
+}
+
+export function createNewSession(): string {
+  const sessionId = uuidv4();
+  const now = Date.now();
+  safeLocalSet(STORAGE_KEYS.SESSION_ID, sessionId);
+  safeLocalSet(STORAGE_KEYS.LAST_ACTIVE, String(now));
+  safeLocalSet(STORAGE_KEYS.SESSION_START_TIME, String(now));
+  // σÉîµ¡Ñµèèσ╜ôσëì tab µ│¿σåîσê░µ┤╗Φ╖âΘ¢åσÉê∩╝êΘªûΣ╕¬ tab σì│Θªûµïìσ┐âΦ╖│∩╝ë
+  incrementTabCount();
+  return sessionId;
+}
+
+export function reuseSession(): string {
+  const sessionId = getSessionId();
+  incrementTabCount();
+  updateLastActive();
+  return sessionId;
+}
+
+export function updateLastActive(): void {
+  safeLocalSet(STORAGE_KEYS.LAST_ACTIVE, String(Date.now()));
+}
+
+/**
+ * Σ║îµ¼íΣ┐¥ΘÖ⌐∩╝ÜµáíΘ¬î sessionId σ╖▓τ╗ÅµîüΣ╣àσîûσ£¿ storage Σ╕¡∩╝îΦó½σñûΘâ¿µ╕àµÄëσêÖτ½ïσê╗ΘçìσåÖ
+ *
+ * Φ░âτö¿µù╢µ£║∩╝Ü
+ *   - TrackProvider useEffect µ£½σ░╛ (queueMicrotask)∩╝îσà£Σ╜Å"σ¡Éτ╗äΣ╗╢ useEffect
+ *     µèóΦ╖æΦªåτ¢û storage"τÜäµ╜£σ£¿ race
+ *   - τ¢æσÉ¼σê░ storage Σ║ïΣ╗╢ newValue=null µù╢ (DevTools µëïσè¿ / σ╝éσ╕╕Φ╖»σ╛äµ╕àτ⌐║)
+ *
+ * σÉîµù╢σ¢₧σí½ lastActive / sessionStartTime∩╝îΘü┐σàì isSessionExpired µèèµüóσñìσÉÄτÜä
+ * session ΘöÖσêñΣ╕║Φ┐çµ£ƒ
+ */
+export function ensureSessionPersisted(sessionId: string): void {
+  if (!sessionId) return;
+  const current = safeLocalGet(STORAGE_KEYS.SESSION_ID);
+  if (current === sessionId) return;
+  const now = Date.now();
+  safeLocalSet(STORAGE_KEYS.SESSION_ID, sessionId);
+  if (!safeLocalGet(STORAGE_KEYS.LAST_ACTIVE)) {
+    safeLocalSet(STORAGE_KEYS.LAST_ACTIVE, String(now));
+  }
+  if (!safeLocalGet(STORAGE_KEYS.SESSION_START_TIME)) {
+    safeLocalSet(STORAGE_KEYS.SESSION_START_TIME, String(now));
+  }
+  // σà£σ║ò∩╝Üµüóσñì sessionId µù╢τí«Σ┐¥Φç¬σ╖▒Σ╣ƒσ£¿µ┤╗Φ╖â tab Θ¢åσÉêΘçî
+  // ∩╝êstorage Φó½σñûΘâ¿µ╕àτ⌐║ / DevTools µ╕àτ╝ôσ¡ÿτ¡ëσ╝éσ╕╕σ£║µÖ»∩╝ë
+  incrementTabCount();
+}
+
+/**
+ * Session σ«₧ΘÖàµ┤╗Φ╖âµù╢Θò┐∩╝êµ»½τºÆ∩╝ë= lastActive - sessionStartTime
+ *
+ * Σ╕ìτö¿ `Date.now() - sessionStartTime` τÜäσÄƒσ¢á∩╝Ü
+ *   - timeout σ£║µÖ»∩╝ÜsetTimeout σê░τé╣µù╢ `now` µ»ö `lastActive` µÖÜ 30min∩╝î
+ *     duration Σ╕Çσ╛ï = 30min∩╝êσÉ½τ¡ëσ╛àΘù▓τ╜«∩╝ë∩╝îµò░Σ╗ôσüÜµù╢Θò┐σêåσ╕âσêåµ₧Éµ▓íµäÅΣ╣ë
+ *   - BFCache σñìµ┤╗σ£║µÖ»∩╝Ü`now` σÅ»Φâ╜µ»ö `lastActive` µÖÜσçáσ░Åµù╢τöÜΦç│Φ╖¿σñ⌐
+ *     ∩╝êτº╗σè¿τ½»σêçσÉÄσÅ░ / Φ«╛σñçΣ╝æτ£á∩╝ë∩╝îduration σ«îσà¿σñ▒τ£ƒ
+ *   - page_close σ£║µÖ»∩╝Ü`handlePageHide` σàÑσÅúσàê `updateLastActive()` µèè
+ *     lastActive σê╖σê░σ╜ôσëìσà│Θù¡µù╢σê╗∩╝îτ¡ëΣ╗╖Σ║Ä `now - startTime`∩╝îΦíîΣ╕║Σ╕ìσÅÿ
+ *
+ * σà£σ║ò∩╝Ü
+ *   - µ▓íµ£ë startTime ΓåÆ Φ┐öσ¢₧ 0∩╝êsession Φ┐ÿµ▓íσê¥σºïσîû∩╝ë
+ *   - lastActive τ╝║σñ▒ / µù⌐Σ║Ä startTime∩╝êσ╝éσ╕╕ storage∩╝ë ΓåÆ ΘÇÇσ¢₧ `now - startTime`
+ */
+export function getSessionDuration(): number {
+  const startTime = getSessionStartTime();
+  if (!startTime) return 0;
+  const lastActive = getLastActive();
+  if (!lastActive || lastActive < startTime) return Date.now() - startTime;
+  return lastActive - startTime;
+}
+
+/**
+ * Φ»╗σÅûµ£¼σ£░σ╖▓Σ╕èµèÑΦ┐ç session_end τÜä sessionId σêùΦí¿
+ * µ│¿∩╝Üτö¿ localStorage µÿ»Σ╕║Σ║åΦ«⌐σñÜµáçτ¡╛Θí╡Σ╣ïΘù┤Σ║Æτ¢╕µäƒτƒÑ∩╝êpagehide / storage Σ║ïΣ╗╢σÅ»σÉîµ¡Ñ∩╝ë
+ */
+function getEndedSessionIds(): string[] {
+  const raw = safeLocalGet(STORAGE_KEYS.ENDED_SESSION_IDS);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((v) => typeof v === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function isSessionEnded(sessionId: string): boolean {
+  if (!sessionId) return false;
+  return getEndedSessionIds().includes(sessionId);
+}
+
+/**
+ * µáçΦ«░ sessionId σ╖▓Σ╕èµèÑΦ┐ç session_end
+ * Φ░âτö¿µû╣Θ£ÇΦç¬ΦíîσüÜσ╣éτ¡ëµúÇµƒÑ∩╝êσàê isSessionEnded ΓåÆ Σ╕ìσ¡ÿσ£¿σåì mark + Σ╕èµèÑ∩╝ë
+ */
+export function markSessionEnded(sessionId: string): void {
+  if (!sessionId) return;
+  const list = getEndedSessionIds();
+  if (list.includes(sessionId)) return;
+  list.push(sessionId);
+  // σÅ¬Σ┐¥τòÖµ£ÇΦ┐æ ENDED_SESSION_IDS_MAX Σ╕¬∩╝îΘü┐σàìµùáΘÖÉσó₧Θò┐
+  const trimmed = list.slice(-ENDED_SESSION_IDS_MAX);
+  safeLocalSet(STORAGE_KEYS.ENDED_SESSION_IDS, JSON.stringify(trimmed));
+}
+
+// ============================================================================
+// Σ╕ÜσèíΣ╕╗σè¿Φ╖│τ¼¼Σ╕ëµû╣τÖ╗σ╜òσ£║µÖ»τÜäπÇîΦ┐₧τ╗¡Σ╝ÜΦ»¥πÇìΣ┐¥µèñ
+// ============================================================================
+// σ£║µÖ»∩╝Üτö¿µê╖σ£¿ livechat Θí╡σÆ¿Φ»óΦ┐çτ¿ïΣ╕¡∩╝êµ╕╕σ«ó / σ╖▓τÖ╗σ╜òΣ╜å IM Θô╛Φ╖»Φªüµ▒éΘçìµû░τÖ╗σ╜ò∩╝ë∩╝î
+//   τé╣σç╗τÖ╗σ╜òσàÑσÅú / Φ╜¼Σ║║σ╖ÑΘô╛µÄÑ∩╝îAuthService.toLogin Φ╡░
+//   window.location.replace(portalUrl) Φ╖¿ origin Φ╖│σê░τ╗ƒΣ╕ÇτÖ╗σ╜òΘí╡∩╝¢τÖ╗σ╜òσ«îµêÉσÉÄ
+//   portal σåì redirect Φ╖│σ¢₧ livechatπÇé
+//
+// Θ╗ÿΦ«ñΦíîΣ╕║Σ╕ï∩╝Ü
+//   - τª╗σ╝Çµù╢ pagehide(persisted=false) ΓåÆ Σ╕èµèÑ session_end(page_close)
+//     + markSessionEnded(X)
+//   - Φ╖│σ¢₧µù╢ useEffect τ£ïσê░ isSessionEnded(X)=true ΓåÆ σ╝║σê╢ createNewSession +
+//     trackSessionStart
+//   - σÉîΣ╕Çµ¼íσÆ¿Φ»óΦíîΣ╕║Φó½σêçµêÉΣ╕ñΣ╕¬ session∩╝îΦ╜¼Σ║║σ╖Ñ / σÆ¿Φ»óµù╢Θò┐µ╝Åµûùσ£¿τÖ╗σ╜òσñäµû¡Φúé
+//
+// Σ┐«σñì∩╝ÜAuthService.toLogin Φ╖│σëìµëôµáçΦ«░∩╝îTrackProvider.handlePageHide σæ╜Σ╕¡
+//   µáçΦ«░σêÖΦ╖│Φ┐ç session_end Σ╕èµèÑ∩╝êΣ╕ìΦ░â markSessionEnded∩╝ë∩╝îτÖ╗σ╜òσ¢₧Φ╖│σÉÄ
+//   useEffect Φ╡░ reuseSession τ╗¡µÄÑσÉîΣ╕Ç sidπÇé
+//
+// µ│¿µäÅ∩╝ÜµáçΦ«░µÿ»Σ╕Çµ¼íµÇºτÜä∩╝êconsume σì│µ╕à∩╝ë∩╝îΣ╗àΦªåτ¢ûπÇîΦ╖│Φ╡░ ΓåÆ σ¢₧µ¥ÑπÇìΦ┐ÖΣ╕Çµ¥Ñσ¢₧∩╝¢
+//   τÖ╗σ╜òσ¢₧µ¥ÑσÉÄΦïÑτö¿µê╖τ╗ºτ╗¡µôìΣ╜£σåìσà│Θù¡ tab∩╝îΣ╗ìΦ╡░µ¡úσ╕╕ session_end µ╡üτ¿ïπÇé
+//
+// Σ╗à toLogin µëôµáçΦ«░∩╝îΣ╕ìσ£¿ redirectToLogin∩╝êlogout / token_expired∩╝ëµëô∩╝Ü
+//   - τö¿µê╖Σ╕╗σè¿τÖ╗σç║ / token Φ┐çµ£ƒ = τ╗ôµ¥ƒσ╜ôσëìσÆ¿Φ»ó∩╝îΣ╕ïµ¼íΦ┐¢σàÑσ║öσ╜ôµÿ»µû░ session
+//   - toLogin = σÆ¿Φ»óΘÇöΣ╕¡Θ£ÇΦªüτÖ╗σ╜òΦ║½Σ╗╜∩╝îτÖ╗σ╜òσëìσÉÄµÿ»σÉîΣ╕Çµ¼íσÆ¿Φ»óΦíîΣ╕║
+//
+// Σ╕ìΦªåτ¢ûτÜäσ£║µÖ»∩╝êΦ┐ÖΣ║¢Σ╗ìµîëΘ╗ÿΦ«ñΘÇ╗Φ╛æΦ╡░∩╝ë∩╝Ü
+//   - τö¿µê╖µëïσè¿σà│Θù¡ tab / µò┤Θí╡Φ╖│σê░Θ¥₧Σ╕ÜσèíσƒƒσÉì ΓåÆ session_end(page_close)
+//   - Φ╖│σê░τÖ╗σ╜òΘí╡σÉÄσü£τòÖΦ╢àΦ┐ç 30min ΓåÆ σ¢₧µ¥Ñµù╢ isSessionExpired=true ΓåÆ µû░ session
+//     ∩╝êτ¼ªσÉê"τö¿µê╖τª╗σ╝Ç 30min τ«ùΦ╢àµù╢"τÜäΦ»¡Σ╣ë∩╝ë
+
+export function markPendingLoginRedirect(): void {
+  safeLocalSet(STORAGE_KEYS.PENDING_LOGIN_REDIRECT, "1");
+}
+
+/**
+ * Φ»╗σÅûσ╣╢µ╕àΘÖñπÇîΣ╕ÜσèíΣ╕╗σè¿Φ╖│τÖ╗σ╜òπÇìµáçΦ«░
+ * Φ┐öσ¢₧ true Φí¿τñ║µ£¼µ¼í pagehide µÿ»Σ╕ÜσèíΣ╕╗σè¿Φ╖│τÖ╗σ╜ò∩╝îΦ░âτö¿µû╣σ║öΦ╖│Φ┐ç session_end Σ╕èµèÑ
+ */
+export function consumePendingLoginRedirect(): boolean {
+  const v = safeLocalGet(STORAGE_KEYS.PENDING_LOGIN_REDIRECT);
+  if (!v) return false;
+  // τ½ïσì│µ╕àΘÖñ∩╝îΘü┐σàìΣ╕ïµ¼íτ£ƒµ¡úσì╕Φ╜╜µù╢Φó½Φ»»σæ╜Σ╕¡
+  safeLocalSet(STORAGE_KEYS.PENDING_LOGIN_REDIRECT, "");
+  if (typeof localStorage !== "undefined") {
+    try {
+      localStorage.removeItem(STORAGE_KEYS.PENDING_LOGIN_REDIRECT);
+    } catch {
+      // safeLocalSet("") σ╖▓τ╗Åµèèσåàσ¡ÿτ╝ôσ¡ÿµ╕àµêÉτ⌐║Σ╕▓∩╝îremoveItem σñ▒Φ┤ÑσÅ»σ┐╜τòÑ
+    }
+  }
+  return true;
+}
+
+
+===== webpack://_N_E/./app/utils/bblTokenCrypto.ts =====
+
+const KEY_B64 = (process.env.NEXT_PUBLIC_ENTRY_AES_KEY ?? "").trim();
+
+export class BblTokenExpiredError extends Error {
+  constructor() {
+    super("bblToken expired");
+    this.name = "BblTokenExpiredError";
+  }
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = "=".repeat((4 - (normalized.length % 4)) % 4);
+  return Uint8Array.from(atob(normalized + pad), (c) => c.charCodeAt(0));
+}
+
+/** TS 5.7+ Σ╕ï Uint8Array.buffer Σ╕║ ArrayBufferLike∩╝îWeb Crypto Θ£ÇΦªü ArrayBuffer */
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
+}
+
+async function importAesKey(): Promise<CryptoKey> {
+  if (!KEY_B64) {
+    throw new Error("NEXT_PUBLIC_ENTRY_AES_KEY is not configured");
+  }
+  return crypto.subtle.importKey(
+    "raw",
+    toArrayBuffer(base64ToBytes(KEY_B64)),
+    "AES-GCM",
+    false,
+    ["decrypt"],
+  );
+}
+
+/**
+ * Φºúσ»åσàÑσÅúΦ╖│Θô╛Σ╕¡τÜä bblTokenπÇé
+ * σ»åµûçµá╝σ╝ÅΣ╕Ä Java BblTokenAesUtils Σ╕ÇΦç┤∩╝ÜBase64URL(iv[12] || ciphertext || tag[16])∩╝î
+ * µÿÄµûçΣ╕║ `token|expireAtMs`πÇé
+ */
+export async function decryptBblToken(packedB64: string): Promise<string> {
+  const packed = base64ToBytes(packedB64.trim());
+  if (packed.length < 12 + 16) {
+    throw new Error("invalid packed token");
+  }
+  const iv = packed.slice(0, 12);
+  const data = packed.slice(12);
+  const raw = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: toArrayBuffer(iv), tagLength: 128 },
+    await importAesKey(),
+    toArrayBuffer(data),
+  );
+  const text = new TextDecoder().decode(raw);
+  const sep = text.lastIndexOf("|");
+  if (sep <= 0 || sep === text.length - 1) {
+    throw new Error("invalid payload");
+  }
+  const token = text.slice(0, sep);
+  const expireAt = Number(text.slice(sep + 1));
+  if (!token || !Number.isFinite(expireAt)) {
+    throw new Error("invalid payload");
+  }
+  if (Date.now() > expireAt) {
+    throw new BblTokenExpiredError();
+  }
+  return token;
+}
+
+/** Φ╖│Θô╛ query Σ╕¡τÜä bblToken∩╝Üσàêµîëσ»åµûçΦºúσ»å∩╝îσñ▒Φ┤ÑσêÖσà╝σ«╣µùºµÿÄµûçπÇéΦ┐çµ£ƒσ»åµûçΦ┐öσ¢₧ undefinedπÇé */
+export async function resolveBblTokenFromQuery(
+  raw?: string | null,
+): Promise<string | undefined> {
+  const value = raw?.trim();
+  if (!value) return undefined;
+  try {
+    return await decryptBblToken(value);
+  } catch (error) {
+    if (error instanceof BblTokenExpiredError) {
+      console.warn("bblToken in URL is expired");
+      return undefined;
+    }
+    return value;
+  }
+}
+
+
+===== webpack://_N_E/./app/utils/bblTokenCrypto.ts =====
+
+const KEY_B64 = (process.env.NEXT_PUBLIC_ENTRY_AES_KEY ?? "").trim();
+
+export class BblTokenExpiredError extends Error {
+  constructor() {
+    super("bblToken expired");
+    this.name = "BblTokenExpiredError";
+  }
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = "=".repeat((4 - (normalized.length % 4)) % 4);
+  return Uint8Array.from(atob(normalized + pad), (c) => c.charCodeAt(0));
+}
+
+/** TS 5.7+ Σ╕ï Uint8Array.buffer Σ╕║ ArrayBufferLike∩╝îWeb Crypto Θ£ÇΦªü ArrayBuffer */
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
+}
+
+async function importAesKey(): Promise<CryptoKey> {
+  if (!KEY_B64) {
+    throw new Error("NEXT_PUBLIC_ENTRY_AES_KEY is not configured");
+  }
+  return crypto.subtle.importKey(
+    "raw",
+    toArrayBuffer(base64ToBytes(KEY_B64)),
+    "AES-GCM",
+    false,
+    ["decrypt"],
+  );
+}
+
+/**
+ * Φºúσ»åσàÑσÅúΦ╖│Θô╛Σ╕¡τÜä bblTokenπÇé
+ * σ»åµûçµá╝σ╝ÅΣ╕Ä Java BblTokenAesUtils Σ╕ÇΦç┤∩╝ÜBase64URL(iv[12] || ciphertext || tag[16])∩╝î
+ * µÿÄµûçΣ╕║ `token|expireAtMs`πÇé
+ */
+export async function decryptBblToken(packedB64: string): Promise<string> {
+  const packed = base64ToBytes(packedB64.trim());
+  if (packed.length < 12 + 16) {
+    throw new Error("invalid packed token");
+  }
+  const iv = packed.slice(0, 12);
+  const data = packed.slice(12);
+  const raw = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: toArrayBuffer(iv), tagLength: 128 },
+    await importAesKey(),
+    toArrayBuffer(data),
+  );
+  const text = new TextDecoder().decode(raw);
+  const sep = text.lastIndexOf("|");
+  if (sep <= 0 || sep === text.length - 1) {
+    throw new Error("invalid payload");
+  }
+  const token = text.slice(0, sep);
+  const expireAt = Number(text.slice(sep + 1));
+  if (!token || !Number.isFinite(expireAt)) {
+    throw new Error("invalid payload");
+  }
+  if (Date.now() > expireAt) {
+    throw new BblTokenExpiredError();
+  }
+  return token;
+}
+
+/** Φ╖│Θô╛ query Σ╕¡τÜä bblToken∩╝Üσàêµîëσ»åµûçΦºúσ»å∩╝îσñ▒Φ┤ÑσêÖσà╝σ«╣µùºµÿÄµûçπÇéΦ┐çµ£ƒσ»åµûçΦ┐öσ¢₧ undefinedπÇé */
+export async function resolveBblTokenFromQuery(
+  raw?: string | null,
+): Promise<string | undefined> {
+  const value = raw?.trim();
+  if (!value) return undefined;
+  try {
+    return await decryptBblToken(value);
+  } catch (error) {
+    if (error instanceof BblTokenExpiredError) {
+      console.warn("bblToken in URL is expired");
+      return undefined;
+    }
+    return value;
+  }
+}
+
+
+===== webpack://_N_E/./app/lib/TrackProvider.tsx =====
+
+"use client";
+
+import { useEffect, useRef, useCallback, type ReactNode } from "react";
+import { tracker } from "@bbl/track";
+import { useCurrentUser } from "./AuthProvider";
+import {
+  getTempUserId,
+  getTempSessionId,
+  getChannelCode,
+  isSessionExpired,
+  createNewSession,
+  reuseSession,
+  updateLastActive,
+  incrementTabCount,
+  decrementTabCount,
+  heartbeatActiveTab,
+  getSessionDuration,
+  getSessionId,
+  getLastActive,
+  isSessionEnded,
+  markSessionEnded,
+  shouldFetchHandyHms,
+  buildHandyHmsChannelCode,
+  ensureSessionPersisted,
+  getInitialUid,
+  consumePendingLoginRedirect,
+} from "../services/trackSession";
+import { trackSessionStart, trackSessionEnd } from "../services/trackEvents";
+import { getEnvRegion } from "../utils/env";
+import { requestUserPromptFromApp } from "../utils/handyBridge";
+import { isAnalyticsTrackingAllowed } from "../utils/cookieConsent";
+
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+const INTERACTION_THROTTLE_MS = 5000;
+// tab heartbeat Θù┤ΘÜö∩╝Ü< trackSession.TAB_HEARTBEAT_TIMEOUT_MS (30s)
+// σÅû 10s µÿ»σ╣│Φíí∩╝Üσñ¬σ░ÅσåÖ storage σñ¬Θóæτ╣ü∩╝îσñ¬σñºΘüçσê░ΘÜÉΦùÅ tab setInterval Φèéµ╡üσê░ 1Hz
+// µù╢σêÜσÑ╜Φ╕⌐σ£¿Φ┐çµ£ƒΦ╛╣τòîπÇé10s Φ╢│Σ╗Ñσ£¿Φèéµ╡üσ£║µÖ»Σ╕ïΣ╣ƒΦç│σ░æµëôσê░Σ╕Çµïì
+const TAB_HEARTBEAT_INTERVAL_MS = 10 * 1000;
+
+function getReporterEnv(): string {
+  const region = getEnvRegion();
+  if (!region) return "prod";
+  if (region.includes("TEST")) return "qa";
+  // pre/ΘóäσÅæ(STAG) τÄ»σóâµÜéµùáτï¼τ½ïτÜäσƒïτé╣Σ╕èµèÑµ£ìσèí∩╝îσñìτö¿ qa τÜäΣ╕èµèÑΦ╖»σ╛ä
+  // (event-qa.bambulab.net)∩╝îΘü┐σàì event-staging σƒƒσÉìΦ┐₧Σ╕ìΘÇÜ
+  if (region.includes("STAG")) return "qa";
+  return "prod";
+}
+
+function getReporterRegion(): "cn" | "us" {
+  const region = getEnvRegion();
+  if (!region) return "cn";
+  return region.startsWith("OR") ? "us" : "cn";
+}
+
+// µ£¼σ£░σ╝ÇσÅæ(localhost / 127.0.0.1 τ¡ë)Σ╕ìΦºªσÅæΣ╗╗Σ╜òσƒïτé╣Σ╕èµèÑ∩╝ÜΘü┐σàìµ£¼σ£░Φ░âΦ»òµò░µì«µ▒íµƒôµò░Σ╗ôπÇé
+// ΘÇÜΦ┐ç beforeTrack σ«êσì½µïªµê¬∩╝îΣ┐¥τòÖ session τöƒσæ╜σæ¿µ£ƒΘÇ╗Φ╛æ(Σ╛┐Σ║Äµ£¼σ£░Θ¬îΦ»üµ╡üτ¿ï)∩╝îΣ╗àΣ╕ìσÅæτ╜æτ╗£Φ»╖µ▒éπÇé
+function isLocalhostEnv(): boolean {
+  if (typeof window === "undefined") return false;
+  const { hostname } = window.location;
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "0.0.0.0" ||
+    hostname === "::1" ||
+    hostname === "[::1]"
+  );
+}
+
+export function TrackProvider({ children }: { children: ReactNode }) {
+  const user = useCurrentUser();
+  const initializedRef = useRef(false);
+  const sessionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tabHeartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const currentSessionIdRef = useRef("");
+
+  const resetSessionTimeout = useCallback(() => {
+    if (sessionTimeoutRef.current) {
+      clearTimeout(sessionTimeoutRef.current);
+    }
+    const scheduleTimeout = (delay: number) => {
+      sessionTimeoutRef.current = setTimeout(handleTimeout, delay);
+    };
+    // σñÜ tab Φ╛╣τòî∩╝Üµ£¼ tab τÜä setTimeout σÅ¬Φ╖ƒΘÜÅµ£¼ tab Φç¬σ╖▒τÜä handleInteraction
+    // Θçìτ╜«∩╝îµùáµ│òµäƒτƒÑ"σÅªΣ╕Ç tab τö¿µê╖σ£¿µîüτ╗¡µôìΣ╜£ ΓåÆ σà¿σ▒Ç track_last_active Σ╕Çτ¢┤Φó½σê╖µû░"
+    // τÜäµâàσå╡πÇéσªéµ₧£τ¢┤µÄÑσê░τé╣σ░▒Σ╕èµèÑ session_end∩╝îΣ╝ÜµèèσÅªΣ╕ÇΣ╕¬Σ╗ìτä╢µ┤╗Φ╖âτÜä tab τÜäΣ╝ÜΦ»¥
+    // ΘöÖΦ»»Θù¡τÄ»∩╝êσà│Φüö doc/σƒïτé╣Φ»┤µÿÄ.md ┬º3.2 E1 τÜäσñÜ tab Φ»»µèÑσ£║µÖ»∩╝ëπÇé
+    //
+    // Σ┐«σñì∩╝Üσê░τé╣µù╢σàêτö¿σà¿σ▒Ç lastActive σåìσêñΣ╕Çµ¼í isSessionExpired∩╝îµ£¬τ£ƒµ¡úΦ┐çµ£ƒσ░▒
+    // µîë"Φ╖¥τª╗µ£ÇσÉÄµ┤╗Φ╖âΦ┐ÿσ╖«σñÜσ░æ"Θçìµû░µîéΣ╕Çµ«╡σ«Üµù╢σÖ¿∩╝îτ¡ëσê░Σ╕ïΣ╕Çµ¼íσê░τé╣σåìσêñπÇé
+    // σÉîµù╢ storage τ¢æσÉ¼ΘçîΣ╣ƒΣ╝Üσ£¿ track_last_active σÅÿσîûµù╢Φ░â resetSessionTimeout∩╝î
+    // σÅîΘçìσà£σ║òΦ╖¿ tab σ£║µÖ»πÇé
+    const handleTimeout = () => {
+      const sid = currentSessionIdRef.current;
+      // σ╣éτ¡ëΣ┐¥µèñ∩╝ÜσÉîΣ╕Ç sessionId σÅ¬σàüΦ«╕Σ╕èµèÑΣ╕Çµ¼í session_end
+      // Φ╖¿µáçτ¡╛Θí╡ΘÇÜΦ┐ç localStorage Σ╕¡τÜä track_ended_session_ids σà▒Σ║½σêñσ«Ü
+      if (!sid || isSessionEnded(sid)) {
+        currentSessionIdRef.current = "";
+        return;
+      }
+      if (!isSessionExpired()) {
+        const lastActive = getLastActive();
+        const remaining = lastActive
+          ? Math.max(1000, SESSION_TIMEOUT_MS - (Date.now() - lastActive))
+          : SESSION_TIMEOUT_MS;
+        scheduleTimeout(remaining);
+        return;
+      }
+      markSessionEnded(sid);
+      trackSessionEnd("timeout", getSessionDuration());
+      currentSessionIdRef.current = "";
+    };
+    scheduleTimeout(SESSION_TIMEOUT_MS);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || initializedRef.current) return;
+    initializedRef.current = true;
+
+    const tempUserId = getTempUserId();
+    const tempSessionId = getTempSessionId();
+    const channelCode = getChannelCode();
+
+    let sessionId: string;
+    let isNewSession = false;
+
+    // σà│Θö«∩╝ÜΘÖñΣ║åπÇîΦ┐çµ£ƒ / Σ╕ìσ¡ÿσ£¿πÇì∩╝îΦ┐ÿΦªüµÄÆΘÖñπÇîσ╖▓Σ╕èµèÑΦ┐ç session_endπÇìτÜä sessionIdπÇé
+    // τ£ƒσ«₧σ£║µÖ»∩╝Üτö¿µê╖σìò tab σê╖µû░Θí╡Θ¥óµù╢∩╝îΣ╕èΣ╕ÇΦ╜« pagehide(persisted=false) σ╖▓σÅæσç║
+    //   session_end(X) + markSessionEnded(X)∩╝îΣ╜å 30min σåà lastActive Σ╗ìµ£¬Φ┐çµ£ƒπÇü
+    //   localStorage Σ╕è X Σ╣ƒΦ┐ÿσ£¿∩╝¢ΦïÑτ¢┤µÄÑΦ╡░ reuseSession Σ╝ÜΦ«⌐µ£¼Φ╜«µëÇµ£ëΣ║ïΣ╗╢τ╗ºτ╗¡µîéσ£¿
+    //   X Σ╕è∩╝îΦÇî X τÜäσÉÄτ╗¡ timeout / pagehide σÅêΣ╝ÜΦó½ isSessionEnded µïªµê¬ ΓåÆ
+    //   µò░Σ╗ôΣ╛ºσç║τÄ░πÇîsession_end Σ╣ïσÉÄΦ┐ÿµ£ëΣ║ïΣ╗╢∩╝îΣ╕öµ░╕Φ┐£µ▓íµ£ëτ¼¼Σ║îµ¥í session_end µö╢σÅúπÇì
+    //   τÜäΦäÅµò░µì« (σà│Φüö e2e/known-issues.md "session Σ╕ìΘù¡τÄ»" τÄ░Φ▒í)
+    const existingSid = getSessionId();
+    if (isSessionExpired() || !existingSid || isSessionEnded(existingSid)) {
+      sessionId = createNewSession();
+      isNewSession = true;
+    } else {
+      sessionId = reuseSession();
+    }
+    currentSessionIdRef.current = sessionId;
+
+    // ============================================================================
+    // Θí╡Θ¥óσì╕Φ╜╜ / BFCache Φ┐¢σàÑ∩╝Üσ┐àΘí╗τö¿ capture µ¿íσ╝Å∩╝îΣ╕öσ£¿ tracker.init() Σ╣ïσëìµ│¿σåî
+    // ============================================================================
+    // ΦâîµÖ»∩╝Ü@bbl/track v1.0 τÜä trackImmediate Φ╡░ `fetch(url, { keepalive: true })`∩╝î
+    // σñ▒Φ┤Ñµù╢**τ½ïσì│σÉîµ¡ÑΘÇÆσ╜Æ retry** µ£ÇσñÜ 2 µ¼í∩╝êreporter.ts L208-253∩╝ëπÇéσ£¿ handy
+    // σåàσ╡î webview ΘöÇµ»üτ₧¼Θù┤∩╝îτ¼¼Σ╕Çµ¼í fetch σ£¿ keepalive σèáµîüΣ╕ïσ╖▓Φó½µ╡ÅΦºêσÖ¿Σ╕╗Φ┐¢τ¿ï
+    // µëÿτ«íΘÇüΦ╛╛ server∩╝îΣ╜å client τ½» await µï┐Σ╕ìσê░ response µè¢ΘöÖΦ┐¢ catch∩╝îSDK τ½ïσê╗
+    // ΘÇÆσ╜ÆσÅæτ¼¼Σ║îµ¼í fetch∩╝îserver σÅêσàÑσ║ôΣ╕Çµ¼í ΓåÆ µò░Σ╗ôπÇî1 start + 2 end∩╝îreason
+    // σ¥çΣ╕║ page_close∩╝îΘù┤ΘÜöσçáσìüµ»½τºÆπÇìσìáµ»ö ~34.63%πÇé
+    //
+    // Σ┐«σñìτ¡ûτòÑ∩╝Üpage_close Φ╖»σ╛äτö¿ `tracker.track(...)` σàÑΘÿƒ∩╝îΦ«⌐ΘÜÅσÉÄΦ╖æτÜä SDK
+    // Φç¬σ╖▒τÜä pagehide handler∩╝êinit µù╢Φç¬σè¿τö¿ capture µ│¿σåî∩╝îΦºü track.ts L442∩╝ë
+    // τö¿ `reporter.flushWithBeacon()` ΓåÆ `navigator.sendBeacon` Σ╕Çµ¼íµÇºµèòΘÇÆπÇé
+    // sendBeacon σìòµ¼íµèòΘÇÆπÇüµùá retryπÇüτö▒µ╡ÅΦºêσÖ¿Σ╕╗Φ┐¢τ¿ïµëÿτ«í∩╝îΣ╗Äµá╣Σ╕èµ╢êΘÖñΘçìσñìπÇé
+    //
+    // **σà│Θö«µù╢σ║Åτ║ªµ¥ƒ**∩╝Ü
+    //   1. Σ╕Üσèí handler σ┐àΘí╗τö¿ capture µ¿íσ╝Å∩╝êaddEventListener τ¼¼Σ╕ëσÅéµò░Σ╝á true∩╝ë
+    //   2. Σ╕Üσèí handler σ┐àΘí╗σ£¿ `tracker.init(...)` Σ╣ïσëì addEventListener
+    //   σÄƒσ¢á∩╝ÜDOM Σ║ïΣ╗╢ΦºäΦîâΦºäσ«ÜσÉîΣ╕ÇΘÿ╢µ«╡σåà listener µîë addEventListener Φ░âτö¿Θí║σ║Å
+    //   ΦºªσÅæπÇéΣ╕ñµ¥íΘâ╜µ╗íΦ╢│µù╢∩╝îΦºªσÅæΘí║σ║Å∩╝ÜΣ╕Üσèí capture ΓåÆ SDK capture∩╝îΣ╕Üσèí push
+    //   σàÑΘÿƒσÉÄ SDK τ┤ºΘÜÅσà╢σÉÄ flushWithBeacon σ╕ªΦ╡░πÇéΣ╗╗Σ╜òΣ╕Çµ¥íΣ╕ìµ╗íΦ╢│∩╝îSDK Θâ╜Σ╝Ü
+    //   σàêΣ║ÄΣ╕ÜσèíΦ╖æ∩╝îflushWithBeacon µù╢ΘÿƒσêùΘçîΦ┐ÿµ▓íµ£ë session_end∩╝îµ£¼µ¼íΣ┐«σñìσñ▒µòê
+    //
+    // Σ╕Üσèí handler Σ╕ìσåìΦ░âτö¿ `tracker.flush()`∩╝ÜSDK capture handler Σ╝ÜΣ╕╗σè¿
+    // flushWithBeacon∩╝êsendBeacon σÉîµ¡ÑµèòΘÇÆ∩╝ë∩╝îΣ╕Üσèí flush Φ╡░τÜäµÿ»σ╝éµ¡Ñ sendViaFetch∩╝î
+    // σ£¿ pagehide τ₧¼Θù┤µá╣µ£¼µ¥ÑΣ╕ìσÅèΦ╖æ
+    const handlePageHide = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        // BFCache∩╝ÜΣ╕ìτ╗ôµ¥ƒ session∩╝îτ¡ë pageshow µüóσñìπÇé
+        // ΘÿƒσêùΘçîΦïÑµ£ëµë╣ΘçÅΣ║ïΣ╗╢∩╝êmessage_send τ¡ë∩╝ë∩╝îτö▒ SDK capture handler τ┤ºΘÜÅσà╢σÉÄ
+        // τö¿ sendBeacon σ╕ªΦ╡░∩╝îΣ╕ÜσèíΦ┐ÖΘçîµùáΘ£ÇΣ╕╗σè¿ flush
+        return;
+      }
+      updateLastActive();
+      // πÇîΣ╕ÜσèíΣ╕╗σè¿Φ╖│τ¼¼Σ╕ëµû╣τÖ╗σ╜òπÇìΣ╛ïσñû∩╝ÜΦ╖│σëì AuthService.toLogin σ╖▓µëôΦ┐çµáçΦ«░∩╝î
+      // µ¡ñµ¼í pagehide Σ╕ìµÿ»τö¿µê╖τ╗ôµ¥ƒσÆ¿Φ»ó∩╝îσÅ¬µÿ»Σ╕¡Φ╜¼τÖ╗σ╜òΘí╡πÇéΦ╖│Φ┐ç session_end /
+      // markSessionEnded∩╝îτÖ╗σ╜òσ¢₧Φ╖│σÉÄ useEffect Φ╡░ reuseSession τ╗¡µÄÑσÉîΣ╕Ç sid∩╝î
+      // Σ┐¥Φ»üΦ╜¼Σ║║σ╖Ñ / σÆ¿Φ»óµù╢Θò┐µ╝ÅµûùΣ╕ìσ£¿τÖ╗σ╜òσñäµû¡ΦúéπÇé
+      // tabCount Σ╗ìµ¡úσ╕╕ΘÇÆσçÅ∩╝Üσ╜ôσëì tab τí«σ«₧µÜéµù╢τª╗σ╝Çµ┤╗Φ╖âσêùΦí¿∩╝îτÖ╗σ╜òσ¢₧Φ╖│τÜä
+      // reuseSession Σ╝ÜΦç¬τä╢ incrementTabCount σ╣│Φííσ¢₧µ¥Ñ∩╝îΦ╖¿ tab Φ«íµò░Σ╗ìσçåτí«
+      if (consumePendingLoginRedirect()) {
+        decrementTabCount();
+        return;
+      }
+      const remainingTabs = decrementTabCount();
+      const sid = currentSessionIdRef.current;
+      // σ╣éτ¡ëΣ┐¥µèñ∩╝ÜΣ╗àσ╜ô sessionId σ░Üµ£¬Φó½Σ╕èµèÑΦ┐ç session_end µù╢µëìΣ╕èµèÑ
+      if (remainingTabs === 0 && sid && !isSessionEnded(sid)) {
+        markSessionEnded(sid);
+        // σ┐àΘí╗τö¿ tracker.track∩╝êσàÑΘÿƒ∩╝îΦ«⌐ SDK σÉÄτ╗¡ sendBeacon σ╕ªΦ╡░∩╝ë
+        // **Σ╕ìΦªü**τö¿ trackImmediate∩╝îΘéúµ¥íΦ╖»σ╛äΣ╝ÜΦºªσÅæ fetch + retry Θçìσñì
+        tracker.track("session_end", {
+          reason: "page_close",
+          duration: getSessionDuration(),
+        });
+      }
+    };
+    // capture µ¿íσ╝Å + µù⌐Σ║Ä tracker.init µ│¿σåî∩╝ÜΦ»ªΦºüΣ╕èµû╣µù╢σ║Åτ║ªµ¥ƒµ│¿Θçè
+    window.addEventListener("pagehide", handlePageHide, true);
+
+    tracker.init({
+      debug: process.env.NODE_ENV === "development",
+      baseData: {
+        app_name: "online-customer-service",
+        // user µ¥ÑΦç¬ AuthProvider context, Σ╜åΘªûµ¼í render µù╢ AuthProvider τÜä
+        // checkAuth() Φ┐ÿσ£¿σ╝éµ¡ÑµëºΦíî, user Σ╗ìΣ╕║ nullπÇéτ¢┤µÄÑσÉîµ¡ÑΦ»╗ localStorage
+        // τÜä login_info Σ╜£Σ╕║σà£σ║ò, Σ┐¥Φ»üτÖ╗σ╜òµÇüΘªûσ▒Å session_start Σ╣ƒσ╕ªµ¡úτí« uid
+        // (PRD R3)πÇéσÉÄτ╗¡ user state hydrate σÉÄΣ╕ïµû╣ useEffect Σ╝Üσåì updateBaseData
+        uid: user?.cusId || getInitialUid(),
+        session_id: sessionId,
+      },
+      commonData: {
+        channel_code: channelCode,
+        temp_user_id: tempUserId,
+        temp_session_id: tempSessionId,
+      },
+      reporter: {
+        baseUrl: process.env.NEXT_PUBLIC_TRACK_BASE_URL as string,
+        env: getReporterEnv(),
+        region: getReporterRegion(),
+      },
+      // Σ╕èµèÑσ«êσì½∩╝Üµ»Åµ¼íΣ╕èµèÑσëìµëºΦíî∩╝îΦ┐öσ¢₧ false σêÖ SDK Σ╕óσ╝âΦ»ÑΣ║ïΣ╗╢∩╝êσÉ½ session_start/endπÇü
+      // message_sendπÇütransfer_human τ¡ëµëÇµ£ëΦ╡░ tracker.* τÜäΦ╖»σ╛ä∩╝ë∩╝îΣ╗Äµ║Éσñ┤σü£µ¡óΣ╕èµèÑπÇé
+      //   1. localhost µ£¼σ£░σ╝ÇσÅæ∩╝ÜΣ╕Çσ╛ïΣ╕ìΣ╕èµèÑ∩╝îΘü┐σàìµ£¼σ£░Φ░âΦ»òµò░µì«µ▒íµƒôµò░Σ╗ô∩╝¢
+      //   2. Cookie σÉîµäÅσ«êσì½∩╝Üσêñµû¡τö¿µê╖µÿ»σÉªµÄêµ¥âσêåµ₧Éτ▒╗(σƒïτé╣) cookie∩╝îµ£¬µïÆτ╗¥Θ╗ÿΦ«ñµö╛Φíî∩╝¢
+      //      GPC Σ┐íσÅ╖ / µ¿¬σ╣àσÅûµ╢êσêåµ₧Éτ▒╗ / GDPR µ£¬µÄêµ¥â ΓåÆ Φ┐öσ¢₧ false σü£µ¡óΣ╕èµèÑπÇé
+      beforeTrack: () => !isLocalhostEnv() && isAnalyticsTrackingAllowed(),
+    });
+
+    if (isNewSession) {
+      trackSessionStart();
+    }
+
+    // Σ║îµ¼íΣ┐¥ΘÖ⌐∩╝Üknown-issues.md #2 Σ╕¡Φºéσ»ƒσê░πÇîsession_start payload σ╖▓σ╕ª
+    // sessionId∩╝îΣ╜å localStorage.track_session_id Σ╗ìΣ╕║ nullπÇìπÇéΣ╕ÜσèíΣ╛ºµ▓íµ£ë
+    // removeItem/clear Φ░âτö¿ (σ╖▓ grep σà¿ΘçÅΣ╗úτáü)∩╝îΣ╜åΣ╗ìσÅ»Φâ╜σæ╜Σ╕¡µ╡ÅΦºêσÖ¿ storage
+    // Θ¥ÖΘ╗ÿσñ▒Φ┤Ñ / σ¡Éτ╗äΣ╗╢ useEffect µèóΦ╖æτ¡ëτÄ»σóâσ¢áτ┤áπÇéΦ┐ÖΘçîσ£¿µëÇµ£ëσÉîµ¡Ñσë»Σ╜£τö¿Φ╖æσ«î
+    // (σÉ½σ¡Éτ╗äΣ╗╢ useEffect) Σ╣ïσÉÄτö¿ queueMicrotask σåìµáíΘ¬îΣ╕Çµ¼í∩╝îΦó½µ╕àµÄëσêÖΘçìσåÖ
+    queueMicrotask(() => {
+      if (currentSessionIdRef.current) {
+        ensureSessionPersisted(currentSessionIdRef.current);
+      }
+    });
+
+    // Handy σ«┐Σ╕╗σåàπÇüURL µ£¬µîçσ«Ü channel µù╢∩╝îσ╝éµ¡ÑΣ╗ÄµíÑµÄÑΦÄ╖σÅû HMS τ▓╛σîû channel_code
+    // init Θÿ╢µ«╡σ╖▓σàêτö¿ cn-handy / en-handy σìáΣ╜ì∩╝îµíÑµÄÑµêÉσèƒσêÖΦªåτ¢ûΣ╕║ cn-{HMS} / en-{HMS}
+    // µíÑµÄÑσñ▒Φ┤Ñ / Φ╢àµù╢ / Φ┐öσ¢₧τ⌐║σ¥çΣ┐¥µîüσìáΣ╜ì∩╝îΣ╕ìΘÿ╗σí₧Σ╕╗µ╡üτ¿ï
+    if (shouldFetchHandyHms()) {
+      requestUserPromptFromApp()
+        .then((res) => {
+          const hms = res?.hms || res?.hmsList?.[0]?.hms;
+          if (hms) {
+            tracker.updateCommonData({
+              channel_code: buildHandyHmsChannelCode(hms),
+            });
+          }
+        })
+        .catch(() => {});
+    }
+
+    resetSessionTimeout();
+
+    // --- µ┤╗Φ╖â tab σ┐âΦ╖│ ---
+    // µ»Å 10s σåÖΣ╕Çµ¼íΦç¬σ╖▒τÜä lastHeartbeat σê░ track_active_tabs∩╝îΣ┐¥Φ»üΣ╗ìσ£¿ active_tabs
+    // Θ¢åσÉêσåàπÇéσà╢Σ╗û tab σà│Θù¡µù╢ decrementTabCount Σ╝ÜΦ»╗Φ┐ÖΣ╗╜Θ¢åσÉêσêñσ«ÜπÇîµÿ»σÉªµ£ÇσÉÄΣ╕ÇΣ╕¬ tabπÇìπÇé
+    // ΘÜÉΦùÅ tab τÜä setInterval Σ╝ÜΦó½µ╡ÅΦºêσÖ¿Φèéµ╡üσê░ 1Hz∩╝îΣ╜å 10s Θù┤ΘÜö + 30s Φ┐çµ£ƒΘÿêσÇ╝
+    // Σ╣ïΘù┤τòÖµ£ëσààΦ╢│ buffer∩╝îΦèéµ╡üσ£║µÖ»Σ╕ïΣ╣ƒΦâ╜Φç│σ░æµëôσê░Σ╕Çµïì
+    if (tabHeartbeatRef.current) clearInterval(tabHeartbeatRef.current);
+    tabHeartbeatRef.current = setInterval(
+      heartbeatActiveTab,
+      TAB_HEARTBEAT_INTERVAL_MS,
+    );
+
+    // --- τö¿µê╖Σ║ñΣ║Æτ¢æσÉ¼∩╝Üµ¢┤µû░ last_activeπÇüΘçìτ╜«Φ╢àµù╢Φ«íµù╢σÖ¿ ---
+    let lastInteractionTime = 0;
+    const handleInteraction = () => {
+      // πÇîsession σñìµ┤╗πÇìσêåµö»Σ╕ìσÅùΦèéµ╡üτ║ªµ¥ƒ∩╝Üτí«Σ┐¥ BFCache µüóσñì / timeout Σ╕èµèÑσÉÄ
+      // τö¿µê╖τ¼¼Σ╕ÇΣ╕¬τé╣σç╗Σ║ïΣ╗╢σ░▒Φâ╜µîéσ£¿µû░ session Σ╕è∩╝îΘü┐σàìπÇîself_service_click /
+      // transfer_human ΦÉ╜σê░σ╖▓ ended τÜä sessionπÇìτÜäΘù«Θóÿ
+      if (!currentSessionIdRef.current) {
+        const newSessionId = createNewSession();
+        currentSessionIdRef.current = newSessionId;
+        tracker.updateBaseData({ session_id: newSessionId });
+        trackSessionStart();
+        updateLastActive();
+        resetSessionTimeout();
+        lastInteractionTime = Date.now();
+        return;
+      }
+
+      const now = Date.now();
+      if (now - lastInteractionTime < INTERACTION_THROTTLE_MS) return;
+      lastInteractionTime = now;
+
+      updateLastActive();
+      resetSessionTimeout();
+    };
+
+    const interactionEvents = ["mousedown", "keydown", "touchstart", "scroll"];
+    interactionEvents.forEach((evt) => {
+      window.addEventListener(evt, handleInteraction, { passive: true });
+    });
+
+    // --- BFCache µüóσñì ---
+    // event.persisted === true Φí¿τñ║Σ╗Ä BFCache µüóσñì∩╝êuseEffect Σ╕ìΣ╝ÜΘçìΦ╖æ∩╝ë∩╝î
+    // Θ£ÇΦªüΣ╕╗σè¿µáíΘ¬î session τè╢µÇü∩╝îσ┐àΦªüµù╢σñìµ┤╗µû░ session µÄÑΣ╜ÅσÉÄτ╗¡Σ║ñΣ║ÆΣ║ïΣ╗╢
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      const existing = getSessionId();
+      const sessionInvalid =
+        !existing || isSessionExpired() || isSessionEnded(existing);
+      if (sessionInvalid) {
+        // σà│Θö«Σ┐«σñì∩╝ÜBFCache µ£ƒΘù┤ JS µëºΦíîΦó½σå╗τ╗ô∩╝îsetTimeout Σ╕ìΣ╝ÜµÄ¿Φ┐¢∩╝îpagehide
+        // Σ╣ƒΣ╕ìΣ╝Üσ╕ª persisted=false ΦºªσÅæ session_endπÇéτ¢┤µÄÑ createNewSession Σ╝ÜτòÖΣ╕ï
+        // Σ╕ÇΣ╕¬µ░╕Φ┐£Σ╕ìΘù¡τÄ»τÜäµùº session∩╝êµò░Σ╗ôΣ╛º session_start σñÜΣ║Ä session_end∩╝î
+        // πÇîΣ╝ÜΦ»¥µù╢Θò┐ / σ«îµêÉτÄçπÇìµîçµáçσà¿Θâ¿σüÅΣ╜Ä∩╝ëπÇé
+        // Φ┐ÖΘçîσ£¿σêçσê░µû░ session Σ╣ïσëì∩╝îσàêτ╗ÖΦÇü sid Σ╕╗σè¿ΦíÑΣ╕Çµ¥í session_end("timeout")πÇé
+        //
+        // duration τö¿ lastActive - sessionStartTime ΦÇîΘ¥₧ now - sessionStartTime∩╝Ü
+        // BFCache σñìµ┤╗µù╢ now Φ╖¥τª╗ lastActive σÅ»Φâ╜Φ╖¿σ░Åµù╢τöÜΦç│Φ╖¿σñ⌐∩╝êτº╗σè¿τ½»Θò┐µù╢Θù┤σêç
+        // σÉÄσÅ░ / Φ«╛σñçΣ╝æτ£á∩╝ë∩╝îτö¿ now τ«ùσç║τÜä duration σ«îσà¿σñ▒τ£ƒ∩╝¢τö¿ lastActive µëìµÿ»
+        // τö¿µê╖σ«₧ΘÖàΣ╜┐τö¿µù╢Θò┐πÇé
+        if (existing && !isSessionEnded(existing)) {
+          // σàêµèè duration σ┐½τàºΣ╕ïµ¥ÑσåìσüÜσÉÄτ╗¡µôìΣ╜£πÇéBFCache σå╗τ╗ôµ£ƒΘù┤∩╝îσÅªΣ╕ÇΣ╕¬
+          // tab σÅ»Φâ╜σ╖▓τ╗Å createNewSession Φªåτ¢ûΣ║å track_session_start_time /
+          // track_last_active∩╝¢µ¡ñσñäσåìσÄ╗Φ»╗ getSessionDuration() µï┐σê░τÜäµÿ»
+          // πÇîµû░ session τÜä durationπÇì∩╝îΣ╕Äσì│σ░åΣ╕èµèÑτÜä existing µùº sid Σ╕ìσ»╣σ║ö∩╝î
+          // µò░Σ╗ôΣ╛ºΣ╝ÜΦºéσ»ƒσê░ session_end.duration σ╝éσ╕╕σüÅσ░Å / τöÜΦç│µ»ö startTime
+          // µ¢┤µù⌐τÜäΦ┤ƒσÉæµò░µì«πÇéσ£¿ markSessionEnded / σÉÄΘ¥óτÜä createNewSession σëì
+          // σ¢║σîûσÇ╝∩╝îΣ┐¥Φ»üτö¿τÜäµÿ»µùº session τÜäµ┤╗Φ╖âσî║Θù┤
+          const oldDuration = getSessionDuration();
+          markSessionEnded(existing);
+          // getSessionDuration σ╖▓σ«₧τÄ░ lastActive - startTime Φ»¡Σ╣ë∩╝î
+          // BFCache Φ╖¿σ░Åµù╢Φ╖¿σñ⌐µù╢Σ╕ìΣ╝ÜΦó½ now µ▒íµƒô
+          trackSessionEnd("timeout", oldDuration);
+        }
+        const newSid = createNewSession();
+        currentSessionIdRef.current = newSid;
+        tracker.updateBaseData({ session_id: newSid });
+        trackSessionStart();
+      } else if (existing !== currentSessionIdRef.current) {
+        // Φ╖¿µáçτ¡╛Θí╡ sessionId σ╖▓σÅÿµ¢┤∩╝îµ£¼µáçτ¡╛Θí╡σÉîµ¡ÑΦ┐çµ¥Ñ
+        currentSessionIdRef.current = existing;
+        tracker.updateBaseData({ session_id: existing });
+      }
+      // BFCache µ£ƒΘù┤ setInterval Φó½σå╗τ╗ô∩╝îΦç¬σ╖▒σ╖▓Φó½σà╢Σ╗û tab Σ╗Ä active_tabs Σ╕¡
+      // prune µÄëπÇéσñìµ┤╗σÉÄτ½ïσê╗Θçìµû░µ│¿σåîΣ╕Çµïì∩╝îΣ┐¥Φ»üσÉÄτ╗¡ pagehide µù╢ decrementTabCount
+      // τÜä"µ£ÇσÉÄΣ╕ÇΣ╕¬ tab"σêñσ«Üσçåτí«
+      incrementTabCount();
+      updateLastActive();
+      resetSessionTimeout();
+    };
+    window.addEventListener("pageshow", handlePageShow);
+
+    // --- σÉÄσÅ░σêçµìó∩╝ÜΣ╗àσê╖µë╣ΘçÅΘÿƒσêù∩╝îΣ╕ìΣ╕èµèÑ session_end ---
+    // µíîΘ¥óτ½»σêçµáçτ¡╛ / τº╗σè¿τ½»τƒ¡µù╢σêçσÉÄσÅ░σ¥çΣ╝ÜΦºªσÅæ visibilitychange∩╝î
+    // µ¡ñσ£║µÖ»Σ╕ìσ║öΦºåΣ╕║ session τ╗ôµ¥ƒ∩╝îΣ╗àΣ┐¥Φ»üσ╖▓σàÑΘÿƒΣ║ïΣ╗╢ΦÉ╜σ║ô
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        tracker.flush();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    // --- Φ╖¿µáçτ¡╛Θí╡ session σÉîµ¡Ñ ---
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === "track_session_id") {
+        if (e.newValue) {
+          // Φ╖¿ tab∩╝ÜσÅªΣ╕Çµáçτ¡╛Θí╡σåÖσàÑΣ║åµû░ sessionId∩╝îµ£¼ tab σÉîµ¡ÑΦ┐çµ¥Ñ
+          currentSessionIdRef.current = e.newValue;
+          tracker.updateBaseData({ session_id: e.newValue });
+        } else if (currentSessionIdRef.current) {
+          // newValue=null Φí¿τñ║ storage Φó½σñûΘâ¿ (DevTools µëïσè¿ / σ╝éσ╕╕Φ╖»σ╛ä /
+          // σà╢Σ╗ûµáçτ¡╛Θí╡ removeItem) µ╕àτ⌐║πÇéΣ╕ÜσèíΣ╕èτ¢«σëìΣ╕ìσ¡ÿσ£¿σÉêµ│òµ╕à sessionId
+          // τÜäσ£║µÖ»∩╝îΣ╕╗σè¿µüóσñìσ¢₧σÄ╗∩╝îΘü┐σàìσÉÄτ╗¡Σ║ïΣ╗╢ sessionId µ╝éτº╗
+          ensureSessionPersisted(currentSessionIdRef.current);
+        }
+      }
+      // σà╢Σ╗ûµáçτ¡╛Θí╡Σ╕èµèÑΣ║å session_end∩╝îµ£¼µáçτ¡╛Θí╡µ╕àτ⌐║ ref∩╝îΘü┐σàìµ£¼µáçτ¡╛Θí╡τÜä timeout ΘçìσñìΣ╕èµèÑ
+      if (e.key === "track_ended_session_ids" && currentSessionIdRef.current) {
+        if (isSessionEnded(currentSessionIdRef.current)) {
+          currentSessionIdRef.current = "";
+        }
+      }
+      // Φ╖¿ tab lastActive σÉîµ¡Ñ∩╝ÜσÅªΣ╕Ç tab τö¿µê╖τÜäΣ║ñΣ║ÆΘÇÜΦ┐ç storage Σ║ïΣ╗╢σ╣┐µÆ¡∩╝î
+      // µ£¼ tab Φ╖ƒτ¥ÇΘçìτ╜« 30min σ«Üµù╢σÖ¿∩╝îΘü┐σàìΦç¬σ╖▒ tab Θù▓τ╜«µù╢µèèΣ╗ìτä╢µ┤╗Φ╖âτÜä session Φ»»Θù¡τÄ»
+      if (e.key === "track_last_active" && currentSessionIdRef.current) {
+        resetSessionTimeout();
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      interactionEvents.forEach((evt) => {
+        window.removeEventListener(evt, handleInteraction, {
+          passive: true,
+        } as EventListenerOptions);
+      });
+      // pagehide µ│¿σåîµù╢τö¿Σ║å capture: true∩╝îτº╗ΘÖñµù╢σ┐àΘí╗Σ┐¥µîüΣ╕ÇΦç┤
+      window.removeEventListener("pagehide", handlePageHide, true);
+      window.removeEventListener("pageshow", handlePageShow);
+      window.removeEventListener("storage", handleStorage);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (sessionTimeoutRef.current) {
+        clearTimeout(sessionTimeoutRef.current);
+      }
+      if (tabHeartbeatRef.current) {
+        clearInterval(tabHeartbeatRef.current);
+        tabHeartbeatRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // τÖ╗σ╜òµÇüσÅÿσîûµù╢σ«₧µù╢µ¢┤µû░ uid
+  useEffect(() => {
+    if (!initializedRef.current) return;
+    tracker.updateBaseData({ uid: user?.cusId || "" });
+  }, [user?.cusId]);
+
+  return <>{children}</>;
+}
+

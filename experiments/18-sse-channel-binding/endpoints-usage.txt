@@ -1,0 +1,26 @@
+﻿
+### webpack://_N_E/./app/components/robot/components/aiFeedback/index.tsx
+5 queryFeedbackConfig,
+109 queryFeedbackConfig(params)
+153 /** /robot/front/feedback τÜä feedback∩╝ÜΣ╕ÄΦí¿σìò TextArea µÅÉΣ║ñσåàσ«╣Σ╕ÇΦç┤ */
+164 queryFeedbackConfig({
+
+### webpack://_N_E/./app/api/robot/handyApp.ts
+20 `${prefix}/ai/key/list?languageCode=${params.languageCode}&type=${params.type}`,
+
+### webpack://_N_E/./app/api/chatContent.ts
+49 `${prefix}/ai/key/list`,
+64 const res: RobotBannerType[] = await request.get(`${prefix}/banner/list`, {
+83 `${prefix}/front/fuzzy`,
+
+### webpack://_N_E/./app/api/mallCard.ts
+21 export const createMallCardSnapshot = async (
+25 "/gw/robot/im/mall/card/snapshot",
+
+### webpack://_N_E/./app/api/robot/chatContent.ts
+28 await request.post(`${prefix}/front/feedback`, {
+80 export const queryFeedbackConfig = async (params: IMConfigPropsType) => {
+
+### webpack://_N_E/./app/utils/mallCardEntry.ts
+1 import { createMallCardSnapshot } from "@/app/api/mallCard";
+126 const card = await createMallCardSnapshot({ ...query, clientId });

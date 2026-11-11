@@ -1,0 +1,181 @@
+﻿
+### webpack://_N_E/./app/hooks/useURLSearchParams.ts
+16 *   3. µÄÑσÅúτ╗ôµ₧£µîëσ╜ôσëìΣ╝ÜΦ»¥τ╝ôσ¡ÿσê░ sessionStorage∩╝ê`qr_issue_type_id` /
+19 * ΦÇüτëêµ£¼τÜä sessionStorage µ«ïτòÖΘö«∩╝ê`qr_direct_issue_type_id` /
+34 * Σ╗Ä URL Σ╕¡µÅÉσÅû channel/store σÅéµò░σ╣╢µîüΣ╣àσîûσê░ sessionStorage∩╝î
+46 sessionStorage.setItem(CHANNEL_STORAGE_KEY, channel);
+49 sessionStorage.setItem(STORE_STORAGE_KEY, store);
+60 * σ╜ôσëìΦ┐¢τ║┐µ¥Ñµ║ÉπÇéµ»Åµ¼íτ¢┤µÄÑΣ╗Äσ£░σ¥ÇµáÅΦ»╗σÅû from∩╝îΣ╕ìΦÉ╜ sessionStorageπÇé
+69 return sessionStorage.getItem(CHANNEL_STORAGE_KEY);
+74 return sessionStorage.getItem(STORE_STORAGE_KEY);
+94 const id = sessionStorage.getItem(ISSUE_TYPE_ID_KEY);
+96 const name = sessionStorage.getItem(ISSUE_TYPE_NAME_KEY) || "";
+102 sessionStorage.setItem(ISSUE_TYPE_ID_KEY, cache.issueTypeId);
+103 sessionStorage.setItem(ISSUE_TYPE_NAME_KEY, cache.issueTypeName);
+108 sessionStorage.removeItem(ISSUE_TYPE_ID_KEY);
+109 sessionStorage.removeItem(ISSUE_TYPE_NAME_KEY);
+
+### webpack://_N_E/./app/services/AuthService.ts
+23 const BBL_OFFICIAL_TOKEN_KEY = "bbl_official_token";
+201 sessionStorage.setItem(BBL_OFFICIAL_TOKEN_KEY, token);
+206 return sessionStorage.getItem(BBL_OFFICIAL_TOKEN_KEY)?.trim() || undefined;
+222 sessionStorage.removeItem(BBL_OFFICIAL_TOKEN_KEY);
+319 * τö¿σ«ÿτ╜æ / σòåσƒÄΣ╕ïσÅæτÜä bblToken µìóσÅû IM τÖ╗σ╜òµÇü
+
+### webpack://_N_E/./app/services/trackSession.ts
+8 SESSION_ID: "track_session_id",
+18 ENDED_SESSION_IDS: "track_ended_session_ids",
+30 // σ╜ôσëì tab τÜäσö»Σ╕ÇµáçΦ»å∩╝îsessionStorage ΘÖÉσ«Ü ΓåÆ σÉîΣ╕Ç tab σåàτ¿│σ«Ü∩╝îΣ╕ìΦ╖¿ tab
+34 const ENDED_SESSION_IDS_MAX = 50;
+121 if (typeof sessionStorage === "undefined") return false;
+123 sessionStorage.setItem(key, value);
+132 if (typeof sessionStorage !== "undefined") {
+134 const v = sessionStorage.getItem(key);
+238 * `extractAndSaveQrParams()`∩╝îµèè `?channel=xxx` µîüΣ╣àσîûσê░ sessionStorage σÉÄ
+268 *   4. sessionStorage.qr_channel∩╝êuseURLSearchParams.extractAndSaveQrParams
+272 *      sessionStorage σ£¿σÉî tab σåàΦ╖¿ reload Σ┐¥τòÖ∩╝îΦâ╜µüóσñìσÄƒσºïµ╕áΘüôτáü
+287 // sessionStorage σà£σ║ò∩╝êΣ╕Ä useURLSearchParams.ts τÜä CHANNEL_STORAGE_KEY σ»╣Θ╜É∩╝ë
+290 const stored = sessionStorage.getItem("qr_channel");
+301 * πÇîURL Σ╝ÿσàêπÇìσÄƒσêÖ∩╝ÜURL / sessionStorage Σ╕èµÿÄτí«µîçσ«ÜΣ║å channel µù╢Σ╕ìσåìΦªåτ¢û
+311 // sessionStorage σà£σ║ò∩╝Üreload σÉÄ URL σ╖▓µùáσÅéµò░Σ╜åΘªûσ▒ÅΣ┐¥σ¡ÿΦ┐ç channel µù╢
+314 if (sessionStorage.getItem("qr_channel")) return false;
+339 return safeLocalGet(STORAGE_KEYS.SESSION_ID) || "";
+353 // µá╕σ┐âµÇ¥µâ│∩╝Üµ»ÅΣ╕¬ tab τö¿σö»Σ╕Ç tabId∩╝êsessionStorage∩╝ëµ│¿σåîσê░σà¿σ▒Ç active_tabs map∩╝î
+446 safeLocalSet(STORAGE_KEYS.SESSION_ID, sessionId);
+478 const current = safeLocalGet(STORAGE_KEYS.SESSION_ID);
+481 safeLocalSet(STORAGE_KEYS.SESSION_ID, sessionId);
+521 const raw = safeLocalGet(STORAGE_KEYS.ENDED_SESSION_IDS);
+547 // σÅ¬Σ┐¥τòÖµ£ÇΦ┐æ ENDED_SESSION_IDS_MAX Σ╕¬∩╝îΘü┐σàìµùáΘÖÉσó₧Θò┐
+548 const trimmed = list.slice(-ENDED_SESSION_IDS_MAX);
+549 safeLocalSet(STORAGE_KEYS.ENDED_SESSION_IDS, JSON.stringify(trimmed));
+
+### webpack://_N_E/./app/store/formatMessage.ts
+45 // sessionStorage∩╝îσà│ tab σì│Φ┐çµ£ƒπÇé
+
+### webpack://_N_E/./app/utils/storeBoundDirect.ts
+7 * useURLSearchParams + useClientInit µîüΣ╣àσîûσê░ sessionStorage∩╝êqr_*∩╝ëΦºªσÅæπÇéµ£¼µ¿íσ¥ùµû░σó₧
+15 * σæ╜σÉìτ║ªσ«ÜτÜä sessionStorage key∩╝êσ¥çΣ╕Ä qr_* ΘÜöτª╗∩╝îΣ║ÆΣ╕ìσ╜▒σôì∩╝ë∩╝Ü
+74 * µòàσÇƒσè⌐ sessionStorage Φ╖¿τÖ╗σ╜òσ¢₧Φ╖│Σ╝áΘÇÆ∩╝¢µ╢êΦ┤╣µû╣Φ┤ƒΦ┤úπÇîσÅûσç║σì│σêáπÇìΣ┐¥Φ»üΣ╕Çµ¼íµÇºπÇé
+79 sessionStorage.setItem(PENDING_KEY, JSON.stringify(params));
+86 const raw = sessionStorage.getItem(PENDING_KEY);
+88 sessionStorage.removeItem(PENDING_KEY);
+106 sessionStorage.setItem(ONESHOT_ISSUE_TYPE_NAME_KEY, name);
+112 return sessionStorage.getItem(ONESHOT_ISSUE_TYPE_NAME_KEY);
+117 sessionStorage.removeItem(ONESHOT_ISSUE_TYPE_NAME_KEY);
+
+### webpack://_N_E/./app/utils/string.ts
+83 export function createSessionId() {
+84 if (typeof sessionStorage === "undefined") {
+87 const uid = (sessionStorage && sessionStorage.getItem("SESSION_ID")) || "";
+90 sessionStorage.setItem("SESSION_ID", result);
+
+### webpack://_N_E/./app/components/robot/components/AIFooterShared/useAIFooterFeedback.ts
+10 import { copyToClipboard, createSessionId } from "@/app/utils/string";
+83 const sessionId = createSessionId();
+
+### webpack://_N_E/./app/components/robot/components/aiFeedback/index.tsx
+22 import { createSessionId, createClientUUid } from "@/app/utils/string";
+145 const sessionId = createSessionId();
+
+### webpack://_N_E/./app/api/mallCard.ts
+53 const bblToken = authService.getBblToken();
+56 headers: bblToken ? { bbl_token: `Bearer ${bblToken}` } : undefined,
+
+### webpack://_N_E/./app/api/robot/chatContent.ts
+170 "x-robot-user": xRobotUser,
+
+### webpack://_N_E/./app/api/storeReception.ts
+43 * @param params.store   sessionStorage Σ╕¡τÜä qr_store
+44 * @param params.channel sessionStorage Σ╕¡τÜä qr_channel
+
+### webpack://_N_E/./app/utils/mallCardEntry.ts
+88 const stored = sessionStorage.getItem(storageKey);
+92 sessionStorage.setItem(storageKey, clientId);
+121 sessionStorage.removeItem(storageKey);
+146 sessionStorage.removeItem(storageKey);
+
+### webpack://_N_E/./app/hooks/useClientInit.ts
+134 // Σ╕Çµ¼íµÇºΘù¿σ║ùτ¢┤Φ┐₧σ£║µÖ»µÿ╛σ╝ÅΣ╝áσàÑΘô╛µÄÑΣ╕èτÜä channel/store∩╝êΣ╕ìΦ»╗ sessionStorage τÜä qr_*∩╝ëπÇé
+231 * σæ╜Σ╕¡µ¥íΣ╗╢∩╝êσ┐àΦªüµ¥íΣ╗╢∩╝ë∩╝ÜsessionStorage σÉîµù╢σ¡ÿσ£¿ channel + store Σ╕ñΣ╕¬σÅéµò░∩╝î
+238 *      - σÉªσêÖτ╝ôσ¡ÿσê░ sessionStorage∩╝êσÉî tab σåà AClickListener / ΘçìσÅæΘÇ╗Φ╛æσñìτö¿∩╝ë∩╝¢
+673 /** σö«Σ╕¡τë⌐µ╡üτÖ╗σ╜òσ¢₧Φ╖│∩╝Üµèè sessionStorage τ╝ôσ¡ÿτÜäΣ╝ÜΦ»¥τëçµ«╡µÅÆσàÑΦüèσñ⌐σêùΦí¿σ╣╢ΦÉ╜σ║ô */
+
+### webpack://_N_E/./app/utils/bblTokenCrypto.ts
+5 super("bblToken expired");
+38 * Φºúσ»åσàÑσÅúΦ╖│Θô╛Σ╕¡τÜä bblTokenπÇé
+70 /** Φ╖│Θô╛ query Σ╕¡τÜä bblToken∩╝Üσàêµîëσ»åµûçΦºúσ»å∩╝îσñ▒Φ┤ÑσêÖσà╝σ«╣µùºµÿÄµûçπÇéΦ┐çµ£ƒσ»åµûçΦ┐öσ¢₧ undefinedπÇé */
+80 console.warn("bblToken in URL is expired");
+
+### webpack://_N_E/./app/lib/AuthProvider.tsx
+16 import { resolveBblTokenFromQuery } from "../utils/bblTokenCrypto";
+79 const rawBblToken = url.searchParams.get("bblToken")?.trim();
+81 const bblToken = await resolveBblTokenFromQuery(rawBblToken);
+82 if (bblToken) {
+83 authService.setBblToken(bblToken);
+86 deleteUrlParams(url, "bblToken");
+99 deleteUrlParams(url, "ticket", "redirect", "bblToken");
+124 // µùá IM Token µù╢∩╝îURL σ╕ª bblToken σêÖτö¿σà╢µìóσÅûτÖ╗σ╜òµÇü∩╝êσòåσƒÄτ¡ëσñûΘâ¿σàÑσÅú∩╝ë
+138 } else if (bblToken) {
+139 const res = await authService.loginWithBBLToken(bblToken);
+
+### webpack://_N_E/./app/utils/sellingLogisticsSessionCache.ts
+19 /** sessionStorage key∩╝îτÖ╗σ╜òσ¢₧Φ╖│σÉÄτö¿Σ║Äµüóσñìσö«Σ╕¡τë⌐µ╡üΣ╕èΣ╕ïµûç */
+214 if (typeof sessionStorage === "undefined") return false;
+216 sessionStorage.setItem(
+266 if (typeof sessionStorage === "undefined") return null;
+268 const raw = sessionStorage.getItem(SELLING_LOGISTICS_SESSION_CACHE_KEY);
+285 if (typeof sessionStorage === "undefined") return;
+287 sessionStorage.removeItem(SELLING_LOGISTICS_SESSION_CACHE_KEY);
+294 * µ£¬τÖ╗σ╜òµù╢∩╝Üµá╣µì«σ╜ôσëì msgList σêçτëçσ╣╢σåÖσàÑ sessionStorageπÇé
+506 * σ░å sessionStorage Σ╕¡τÜäΣ╝ÜΦ»¥τëçµ«╡σåÖσ¢₧ msgList∩╝îσåÖσ«îσÉÄµ╕àΘÖñτ╝ôσ¡ÿπÇé
+
+### webpack://_N_E/./node_modules/.pnpm/@sentry+browser@10.44.0/node_modules/@sentry/browser/build/npm/esm/prod/tracing/linkedTraces.js
+187 * Stores @param previousTraceInfo in sessionStorage.
+191 WINDOW.sessionStorage.setItem(PREVIOUS_TRACE_KEY, JSON.stringify(previousTraceInfo));
+193 // Ignore potential errors (e.g. if sessionStorage is not available)
+194 DEBUG_BUILD && debug.warn('Could not store previous trace in sessionStorage', e);
+199 * Retrieves the previous trace from sessionStorage if available.
+203 const previousTraceInfo = WINDOW.sessionStorage?.getItem(PREVIOUS_TRACE_KEY);
+
+### webpack://_N_E/./node_modules/.pnpm/@sentry-internal+replay@10.44.0/node_modules/@sentry-internal/replay/build/npm/esm/index.js
+15 const SESSION_IDLE_PAUSE_DURATION = 300000; // 5 minutes in ms
+18 const SESSION_IDLE_EXPIRE_DURATION = 900000; // 15 minutes in ms
+6040 /** If sessionStorage is available. */
+6044 return 'sessionStorage' in WINDOW && !!WINDOW.sessionStorage;
+6067 WINDOW.sessionStorage.removeItem(REPLAY_SESSION_KEY);
+6097 WINDOW.sessionStorage.setItem(REPLAY_SESSION_KEY, JSON.stringify(session));
+6167 const sessionStringFromStorage = WINDOW.sessionStorage.getItem(REPLAY_SESSION_KEY);
+6269 DEBUG_BUILD && debug.infoTick('Session in sessionStorage is expired, creating new one...');
+8512 sessionIdlePause: SESSION_IDLE_PAUSE_DURATION,
+8513 sessionIdleExpire: SESSION_IDLE_EXPIRE_DURATION,
+9072 // SESSION_IDLE_PAUSE_DURATION. Otherwise non-user activity can trigger a new
+9350 // If the user has come back to the page within SESSION_IDLE_PAUSE_DURATION
+
+### webpack://_N_E/./app/components/robot/components/AssociateButtonList/index.tsx
+118 // throttleClick τö¿ useMemo τ╝ôσ¡ÿ∩╝îσ┐àΘí╗τö¿ ref Φ»╗µ£Çµû░τÖ╗σ╜òµÇü∩╝îσÉªσêÖ bblToken σ╝éµ¡ÑτÖ╗σ╜òµêÉσèƒσÉÄ
+
+### webpack://_N_E/./app/hooks/robot/useAIChat.ts
+406 "x-robot-user": sessionId || "",
+984 "x-robot-user": sessionId || "",
+
+### webpack://_N_E/./app/hooks/robot/useSSESend.ts
+3 import { createSessionId } from "@/app/utils/string";
+122 const sessionId = createSessionId();
+
+### webpack://_N_E/./app/utils/bblTokenCrypto.ts
+5 super("bblToken expired");
+38 * Φºúσ»åσàÑσÅúΦ╖│Θô╛Σ╕¡τÜä bblTokenπÇé
+70 /** Φ╖│Θô╛ query Σ╕¡τÜä bblToken∩╝Üσàêµîëσ»åµûçΦºúσ»å∩╝îσñ▒Φ┤ÑσêÖσà╝σ«╣µùºµÿÄµûçπÇéΦ┐çµ£ƒσ»åµûçΦ┐öσ¢₧ undefinedπÇé */
+80 console.warn("bblToken in URL is expired");
+
+### webpack://_N_E/./app/lib/AuthProvider.tsx
+16 import { resolveBblTokenFromQuery } from "../utils/bblTokenCrypto";
+79 const rawBblToken = url.searchParams.get("bblToken")?.trim();
+81 const bblToken = await resolveBblTokenFromQuery(rawBblToken);
+82 if (bblToken) {
+83 authService.setBblToken(bblToken);
+86 deleteUrlParams(url, "bblToken");
+99 deleteUrlParams(url, "ticket", "redirect", "bblToken");
+124 // µùá IM Token µù╢∩╝îURL σ╕ª bblToken σêÖτö¿σà╢µìóσÅûτÖ╗σ╜òµÇü∩╝êσòåσƒÄτ¡ëσñûΘâ¿σàÑσÅú∩╝ë
+138 } else if (bblToken) {
+139 const res = await authService.loginWithBBLToken(bblToken);

@@ -1,0 +1,342 @@
+﻿
+===== webpack://_N_E/./app/services/AuthService.ts =====
+
+import Cookies from "js-cookie";
+import {
+  login,
+  LoginInfo,
+  refreshTokenData,
+  loginByBBLToken,
+} from "@/app/api/auth";
+import {
+  requestUserTokenFromApp,
+  requireTicket,
+  confirmTicket,
+} from "@/app/utils/handyBridge";
+import { CONNECT_PATH } from "../constants";
+import { tryParse } from "../utils/object";
+import { markPendingLoginRedirect, setLastUid } from "./trackSession";
+import { isHandyApp } from "../utils/device";
+
+const PORTAL_LOGIN_URL = `${process.env.NEXT_PUBLIC_PORTAL_URL}/sign-in`;
+const LOGIN_PATH = "/";
+export const TOKEN_KEY = "bbl_im_token";
+export const LOGIN_INFO = "login_info";
+export const USER_INFO = "user_info";
+const BBL_OFFICIAL_TOKEN_KEY = "bbl_official_token";
+const getPath = process.env.NODE_ENV !== "development" ? CONNECT_PATH : "";
+
+interface AuthLoginInfo extends LoginInfo {
+  saveAuthTime: number;
+}
+
+interface UserInfo {
+  cusId: string;
+  name: string;
+  email: string;
+  phone: string;
+}
+
+// Φ«ñΦ»üΣ║ïΣ╗╢τ▒╗σ₧ï
+export enum AuthEventType {
+  LOGOUT = "logout",
+  LOGIN = "login",
+  TOKEN_EXPIRED = "token_expired",
+}
+
+/**
+ * ΘÇÜΦ┐çhandy appτÜätokenσÄ╗ΦÄ╖σÅûticket
+ * τä╢σÉÄΘÇÜΦ┐çticketσÄ╗µêæΣ╗¼Φç¬σ╖▒τÜäµÄÑσÅúΦÄ╖σÅûτö¿µê╖Σ┐íµü»σÆîtoken
+ * @returns
+ */
+export const getHandyAppLogin = async () => {
+  try {
+    // ΦÄ╖σÅûτö¿µê╖Token
+    const { accessToken } = await requestUserTokenFromApp({ shouldLogin: 1 });
+    // const accessToken =
+    //   "AACz_2KGV453SOVlWS2R2L4g5v_evytRdROrHFG799yBB2oP9ARowwP9mRwWqDhRRcg2wQIuYNk-aT6aLI6mSxFtTVPT7_eOldcXp0MyYqyUlx6TwvovxL-p0oeoK-W54sSA3zzp0R0-0rrT";
+    // const { ticket } = await requireTicket(accessToken as string);
+    // confirmTicket(ticket as string, accessToken as string);
+    return await authService.loginWithBBLToken(accessToken);
+  } catch (error) {
+    console.error("Failed to get login:", error);
+    throw error;
+  }
+};
+
+// Σ║ïΣ╗╢τ¢æσÉ¼σÖ¿τ▒╗σ₧ï
+type AuthEventListener = () => void;
+
+class AuthService {
+  private static instance: AuthService;
+  private loginToken: string | null = null; // τö¿µê╖τÖ╗σ╜òµù╢τÜäσê¥σºïtoken
+  private eventListeners: Map<AuthEventType, Set<AuthEventListener>> =
+    new Map();
+  // logout in-flight guard∩╝ÜΘü┐σàìσñÜΣ╕¬σ╣╢σÅæ API 401/30002 σÉäΦç¬ΦºªσÅæΣ╕Çµ¼í
+  // emit(LOGOUT) + window.location.replace∩╝îσ»╝Φç┤ listener σñÜµ¼íΦ╖æπÇü
+  // σ╖▓σàÑΘÿƒτÜäµë╣ΘçÅΣ║ïΣ╗╢Φó½σå▓σê╖σñÜµ¼íπÇéΘöüΣ╕ìΘ£ÇΦªüΣ╕╗σè¿Φºú∩╝îΘí╡Θ¥óΦ╖│Φ╜¼σÉÄµò┤Σ╕¬ JS context
+  // Σ╝ÜΘçìτ╜«∩╝îµû░Θí╡Θ¥óσèáΦ╜╜Φç¬τä╢Θçìτ╜«σ«₧Σ╛ïτè╢µÇü
+  private isLoggingOut = false;
+
+  private static get FULL_LOGIN_URL() {
+    return `${window.location.origin}${getPath}`;
+  }
+
+  private constructor() {}
+
+  static getInstance() {
+    if (!AuthService.instance) {
+      this.instance = new AuthService();
+    }
+    return this.instance;
+  }
+
+  /**
+   * µ╖╗σèáΣ║ïΣ╗╢τ¢æσÉ¼σÖ¿
+   */
+  on(event: AuthEventType, listener: AuthEventListener) {
+    if (!this.eventListeners.has(event)) {
+      this.eventListeners.set(event, new Set());
+    }
+    this.eventListeners.get(event)!.add(listener);
+
+    // Φ┐öσ¢₧σÅûµ╢êΦ«óΘÿàσç╜µò░
+    return () => this.off(event, listener);
+  }
+
+  /**
+   * τº╗ΘÖñΣ║ïΣ╗╢τ¢æσÉ¼σÖ¿
+   */
+  off(event: AuthEventType, listener: AuthEventListener) {
+    const listeners = this.eventListeners.get(event);
+    if (listeners) {
+      listeners.delete(listener);
+    }
+  }
+
+  /**
+   * ΦºªσÅæΣ║ïΣ╗╢
+   */
+  private emit(event: AuthEventType) {
+    const listeners = this.eventListeners.get(event);
+    if (listeners) {
+      listeners.forEach((listener) => {
+        try {
+          listener();
+        } catch (error) {
+          console.error(`Error in ${event} listener:`, error);
+        }
+      });
+    }
+  }
+
+  setToken(token: string, info?: LoginInfo) {
+    // Φ«╛τ╜«cookieΣ╕¡τÜätoken
+    Cookies.set(TOKEN_KEY, token, { path: "/" });
+    if (!this.loginToken) {
+      this.loginToken = token;
+    }
+
+    // σªéµ₧£Φ┐ÿµ▓íµ£ëτÖ╗σ╜òtoken∩╝îσêÖσ░åσà╢Φ«╛Σ╕║τÖ╗σ╜òtoken
+    if (info) {
+      localStorage.setItem(
+        LOGIN_INFO,
+        JSON.stringify({
+          ...info,
+          saveAuthTime: Date.now(),
+        }),
+      );
+      // σÉîµ¡ÑµîüΣ╣àσîû cusId σê░τï¼τ½ïτÜä track_last_uid σ┐½τàº∩╝Ü
+      // clearToken / logout Σ╕ìµ╕àµ¡ñ key∩╝îhandy Φç¬σè¿τ╗¡ token reload σÉÄ
+      // getInitialUid() Σ╗ìΦâ╜µï┐σê░Σ╕èΣ╕Çµ¼íτÜä cusId σà£σ║òΘªûσ▒Å session_start
+      if (info.cusInfo?.cusId) {
+        setLastUid(info.cusInfo.cusId);
+      }
+    }
+  }
+
+  /**
+   * τ╗¡µ£ƒtoken
+   * @returns void
+   */
+  async renewalToken() {
+    const loginInfo = tryParse(
+      localStorage.getItem(LOGIN_INFO) || "",
+    ) as AuthLoginInfo;
+    if (loginInfo) {
+      const { saveAuthTime, accessTokenExpiresIn, refreshToken } = loginInfo;
+      // σ╜ôΦ╖¥τª╗Φ┐çµ£ƒµù╢Θù┤10%µù╢∩╝îΦ«ñΣ╕║σì│σ░åΦ┐çµ£ƒ∩╝îµ¢┤µû░token
+      const threshold = 0.8;
+      if (
+        (Date.now() - saveAuthTime) / (Number(accessTokenExpiresIn) * 1000) >
+        threshold
+      ) {
+        try {
+          const res = await refreshTokenData(refreshToken);
+          this.setToken(res.accessToken, res);
+        } catch (error) {
+          console.log(error);
+          // σñ▒Φ┤ÑΣ║åΣ╣ƒµ¢┤µû░µù╢Θù┤
+          this.setToken(loginInfo.accessToken, loginInfo);
+        }
+      }
+    }
+  }
+
+  setUserInfo(info: LoginInfo | null) {
+    localStorage.setItem(USER_INFO, JSON.stringify(info ? info.cusInfo : null));
+  }
+
+  getUserInfo() {
+    const loginInfo = tryParse(
+      localStorage.getItem(USER_INFO) || "",
+    ) as UserInfo;
+    return loginInfo;
+  }
+
+  getToken() {
+    return Cookies.get(TOKEN_KEY);
+  }
+
+  /** σ«ÿτ╜æ / σòåσƒÄ accessToken∩╝îτö¿Σ║Ä C τ½»Σ╕èΣ╕ïµûçΦ╖│Φ╜¼τ¡ëΘ£Ç bbl_token τÜäµÄÑσÅú */
+  setBblToken(token: string) {
+    if (typeof window === "undefined" || !token) return;
+    sessionStorage.setItem(BBL_OFFICIAL_TOKEN_KEY, token);
+  }
+
+  getBblToken() {
+    if (typeof window === "undefined") return undefined;
+    return sessionStorage.getItem(BBL_OFFICIAL_TOKEN_KEY)?.trim() || undefined;
+  }
+
+  // ΦÄ╖σÅûτÖ╗σ╜òµù╢τÜäσÄƒσºïtoken
+  getLoginToken() {
+    return this.loginToken;
+  }
+
+  clearToken() {
+    // µ╕àτÉåcookie
+    Cookies.remove(TOKEN_KEY, { path: "/" });
+    // µ╕àτÉåτÖ╗σ╜òΣ┐íµü»
+    localStorage.removeItem(LOGIN_INFO);
+    // µ╕àτÉåτÖ╗σ╜òtoken
+    this.loginToken = null;
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem(BBL_OFFICIAL_TOKEN_KEY);
+    }
+  }
+
+  toLogin(search: string, redirect: string) {
+    // σ«ÿτ╜æσ¢₧Φ░âσ£░σ¥Ç∩╝îτö¿Σ║ÄτÖ╗σ╜òµêÉσèƒσÉÄΦ╖│Φ╜¼σ¢₧σ╜ôσëìΘí╡Θ¥ó
+    const returnUrl = new URL(AuthService.FULL_LOGIN_URL + search);
+    if (redirect) {
+      returnUrl.searchParams.set("redirect", redirect);
+    }
+
+    // Φ╖│Φ╜¼σê░σ«ÿτ╜æτÜäτ╗ƒΣ╕ÇτÖ╗σ╜òΘí╡Θ¥ó
+    const portalUrl = new URL(PORTAL_LOGIN_URL);
+    portalUrl.searchParams.set("ticket", "1");
+    portalUrl.searchParams.set("to", returnUrl.toString());
+    // Φ╖│σëìµáçΦ«░∩╝ÜΦ«⌐ TrackProvider.handlePageHide Φ╖│Φ┐ç session_end Σ╕èµèÑ∩╝î
+    // τÖ╗σ╜òσ¢₧Φ╖│σÉÄτ╗¡µÄÑσÉîΣ╕Ç sessionId∩╝îΘü┐σàìσÆ¿Φ»óΦíîΣ╕║Φó½τÖ╗σ╜òσêçµêÉΣ╕ñΣ╕¬ session
+    markPendingLoginRedirect();
+    window.location.replace(portalUrl.toString());
+  }
+
+  async login(
+    doNotUseTicket = false,
+    target = "",
+    extraParams?: Record<string, string>,
+  ) {
+    const href = window.location.href;
+    const url = new URL(href);
+    if (target) {
+      url.searchParams.set("target", target);
+    }
+    if (extraParams) {
+      Object.entries(extraParams).forEach(([key, value]) => {
+        url.searchParams.set(key, value);
+      });
+    }
+    const ticket = url.searchParams.get("ticket");
+    const getPath = process.env.NODE_ENV !== "development" ? CONNECT_PATH : "";
+    const redirect = url.searchParams.get("redirect") || getPath;
+    const search = url.search || "";
+
+    // σªéµ₧£ ticket Σ╕║τ⌐║∩╝îσêÖΦ╖│Φ╜¼σê░σ«ÿτ╜æτÜäτ╗ƒΣ╕ÇτÖ╗σ╜òΘí╡Θ¥ó
+    if (!ticket || doNotUseTicket) {
+      this.toLogin(search, redirect);
+      return;
+    }
+
+    try {
+      const res = await login(ticket);
+      this.setToken(res.accessToken, res);
+      // σªéµ₧£τÖ╗σ╜òµêÉσèƒ∩╝îσêÖΦ╖│Φ╜¼σ¢₧σ╜ôσëìΘí╡Θ¥ó
+      window.location.replace(redirect);
+    } catch {
+      console.log("error");
+      this.toLogin(search, redirect);
+    }
+  }
+
+  logout(reason: "manual" | "token_expired" = "manual") {
+    // in-flight guard∩╝Üσ╣╢σÅæ 401 / 30002 σ£║µÖ»Σ╕ïσÅ¬σàüΦ«╕Σ╕Çµ¼íσ«îµò┤ logout µ╡üτ¿ï
+    if (this.isLoggingOut) return;
+    this.isLoggingOut = true;
+
+    // clearTokenΣ╝Üµ╕àτÉåcookieσÆîτÖ╗σ╜òtoken
+    this.clearToken();
+
+    // Handy τ½» token σñ▒µòê Γëê Σ╕ÜσèíΦç¬σè¿τ╗¡ token∩╝îσ╣╢Σ╕ìµÿ»τö¿µê╖τ╗ôµ¥ƒσÆ¿Φ»ó∩╝Ü
+    //   - redirectToLogin Φ╖│σê░σÉîµ║É `${getPath}/`∩╝îwebview σåà reload
+    //   - AuthProvider.checkAuth ΓåÆ isHandyApp ΓåÆ fetchHandyAppLogin
+    //     ΘÇÜΦ┐ç webview µíÑµÄÑΘ¥ÖΘ╗ÿµï┐µû░ token∩╝îτö¿µê╖σ«îσà¿µùáµäƒ
+    // σ¢áµ¡ñσ£¿ handy + token_expired σ£║µÖ»Σ╕ïµëôΣ╕Çµ¼íµÇºτÜä
+    // markPendingLoginRedirect µáçΦ«░∩╝îΦ«⌐ TrackProvider.handlePageHide
+    // Φ╖│Φ┐ç session_end Σ╕èµèÑ∩╝îreload σÉÄ useEffect Φ╡░ reuseSession
+    // τ╗¡µÄÑσÉîΣ╕Ç sessionId∩╝îΣ┐¥Φ»üσÆ¿Φ»óΦíîΣ╕║Σ╕ìΦó½Φç¬σè¿τ╗¡ token σêçµêÉΣ╕ñΣ╕¬ sessionπÇé
+    //
+    // µ│¿µäÅ∩╝Üσ┐àΘí╗σ£¿ emit / redirectToLogin Σ╣ïσëìµëôµáçΦ«░∩╝îΘü┐σàì emit σÉîµ¡ÑΦºªσÅæ
+    // τ¢æσÉ¼σÖ¿Σ╕¡τÜäσë»Σ╜£τö¿∩╝êσªé socket µû¡σ╝Çτ¡ë∩╝ëσ»╝Φç┤ pagehide µÅÉσëì fire
+    if (reason === "token_expired" && isHandyApp()) {
+      markPendingLoginRedirect();
+    }
+
+    // ΦºªσÅæτÖ╗σç║Σ║ïΣ╗╢∩╝îΘÇÜτƒÑµëÇµ£ëτ¢æσÉ¼σÖ¿∩╝êσîàµï¼ AuthProvider∩╝ë
+    if (reason === "token_expired") {
+      this.emit(AuthEventType.TOKEN_EXPIRED);
+    }
+    this.emit(AuthEventType.LOGOUT);
+
+    this.redirectToLogin();
+  }
+
+  redirectToLogin(needRedirect: boolean = true) {
+    // const redirect = `${window.location.pathname}${window.location.search}`;
+    const redirectUrl = needRedirect ? `${getPath}${LOGIN_PATH}` : LOGIN_PATH;
+    window.location.replace(redirectUrl);
+  }
+
+  /**
+   * τö¿σ«ÿτ╜æ / σòåσƒÄΣ╕ïσÅæτÜä bblToken µìóσÅû IM τÖ╗σ╜òµÇü
+   */
+  async loginWithBBLToken(accessToken: string) {
+    this.setBblToken(accessToken);
+    const res = await loginByBBLToken(accessToken);
+    this.setToken(res.accessToken, res);
+    return res;
+  }
+
+  // ΦÄ╖σÅûτö¿µê╖Σ┐íµü»
+  async fetchHandyAppLogin() {
+    try {
+      return await getHandyAppLogin();
+    } catch (error) {
+      console.error("Error fetching login:", error);
+    }
+  }
+}
+
+export const authService = AuthService.getInstance();
+

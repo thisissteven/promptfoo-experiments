@@ -1,0 +1,1013 @@
+﻿
+===== webpack://_N_E/./app/utils/sellingLogisticsSessionCache.ts =====
+
+import {
+  saveRobotInfo,
+  type SaveRobotInfoPropsType,
+} from "@/app/api/robot/chatContent";
+import { authService } from "@/app/services/AuthService";
+import { tryParse } from "@/app/utils/object";
+import {
+  FormPushType,
+  HeaderType,
+  Message,
+  MessageSender,
+  MessageStatus,
+  MessageType,
+  RobotMessage,
+  RobotMessageType,
+} from "@/app/store/types";
+import type { MessageStore } from "@/app/store/types";
+
+/** sessionStorage key∩╝îτÖ╗σ╜òσ¢₧Φ╖│σÉÄτö¿Σ║Äµüóσñìσö«Σ╕¡τë⌐µ╡üΣ╕èΣ╕ïµûç */
+export const SELLING_LOGISTICS_SESSION_CACHE_KEY =
+  "bbl_im_selling_logistics_pending_v1";
+
+/** µÿ»σÉªσ╖▓τÖ╗σ╜ò∩╝êΣ╕Ä AuthProvider Σ╕¡ token µúÇµ╡ïΣ╕ÇΦç┤∩╝îσÅ»σ£¿Θ¥₧ React τÄ»σóâΦ░âτö¿∩╝ë */
+export function isSellingLogisticsUserAuthenticated(): boolean {
+  if (typeof window === "undefined") return false;
+  return !!authService.getToken();
+}
+
+export type SerializedChatMessage = {
+  id?: string;
+  clientId?: string;
+  content: string;
+  timestamp: number;
+  senderType: MessageSender;
+  type?: Message["type"];
+  headerType?: Message["headerType"];
+  messageType?: RobotMessage["messageType"];
+  extension?: string;
+  streaming?: boolean;
+  error?: boolean;
+  robotData?: Record<string, unknown>;
+  senderName?: string;
+};
+
+export type SellingLogisticsSessionCache = {
+  version: 1;
+  savedAt: number;
+  /** σæ╜Σ╕¡σö«Σ╕¡τë⌐µ╡ü SSE τÜäΘéúµ¥íµ£║σÖ¿Σ║║µ╢êµü» id */
+  anchorMessageId: string;
+  sseEvent: string;
+  scenePayload: Record<string, unknown>;
+  requestId?: string;
+  /** Σ╗Ä anchor σ╛ÇΣ╕èτ¢┤σê░ customer∩╝êσÉ½Σ╕ñτ½»∩╝ëτÜäΣ╝ÜΦ»¥τëçµ«╡ */
+  messages: SerializedChatMessage[];
+  /** σ»╣σ║ö msgList Σ╕¡ customer µ╢êµü»τÜä id∩╝îΣ╛┐Σ║ÄτÖ╗σ╜òσÉÄσ«ÜΣ╜ì */
+  customerMessageId?: string;
+};
+
+function isCustomerMessage(msg: Message | RobotMessage): boolean {
+  return msg.senderType === MessageSender.USER;
+}
+
+function stripNonSerializableRobotData(
+  robotData?: RobotMessage["robotData"],
+): Record<string, unknown> | undefined {
+  if (!robotData) return undefined;
+  const { retry: _retry, stopStreaming: _stop, ...rest } = robotData;
+  try {
+    return JSON.parse(JSON.stringify(rest)) as Record<string, unknown>;
+  } catch {
+    return { ...rest };
+  }
+}
+
+export function serializeChatMessage(
+  msg: Message | RobotMessage,
+): SerializedChatMessage {
+  const base: SerializedChatMessage = {
+    id: msg.id,
+    clientId: msg.clientId,
+    content: msg.content ?? "",
+    timestamp: msg.timestamp,
+    senderType: msg.senderType,
+    type: msg.type,
+    headerType: msg.headerType,
+    senderName: msg.senderName,
+  };
+  if ("messageType" in msg) {
+    const robotMsg = msg as RobotMessage;
+    return {
+      ...base,
+      messageType: robotMsg.messageType,
+      extension: robotMsg.extension,
+      streaming: robotMsg.streaming,
+      error: robotMsg.error,
+      robotData: stripNonSerializableRobotData(robotMsg.robotData),
+    };
+  }
+  return base;
+}
+
+/**
+ * Σ╗Ä anchor σ£¿ msgList Σ╕¡τÜäΣ╜ìτ╜«σÉæΣ╕èµë╛∩╝îτ¢┤σê░ customer∩╝êMessageSender.USER∩╝ëπÇé
+ * Φ┐öσ¢₧ [customer .. anchor] Θù¡σî║Θù┤∩╝¢µë╛Σ╕ìσê░ anchor Φ┐öσ¢₧ []∩╝¢µë╛Σ╕ìσê░ customer σêÖΣ╗ÄσêùΦí¿σñ┤σê░ anchorπÇé
+ */
+export function collectMsgListSliceUpToCustomer(
+  msgList: (Message | RobotMessage)[],
+  anchorMessageId: string,
+): {
+  messages: (Message | RobotMessage)[];
+  customerMessageId?: string;
+} {
+  const anchorIndex = msgList.findIndex((m) => m.id === anchorMessageId);
+  if (anchorIndex === -1) {
+    return { messages: [] };
+  }
+
+  let customerIndex = -1;
+  for (let i = anchorIndex; i >= 0; i--) {
+    if (isCustomerMessage(msgList[i])) {
+      customerIndex = i;
+      break;
+    }
+  }
+
+  const startIndex = customerIndex === -1 ? 0 : customerIndex;
+  const slice = msgList.slice(startIndex, anchorIndex + 1);
+  const customerMessageId =
+    customerIndex >= 0 ? msgList[customerIndex].id : undefined;
+
+  return { messages: slice, customerMessageId };
+}
+
+/** Σ╗Ä form_push SSE data Φºúµ₧Éµ£ìσèíτ½»Σ╕ïσÅæτÜä clientId */
+export function parseFormPushClientIdFromEventData(
+  formPushEventData: string,
+): string | undefined {
+  const parsed = tryParse(formPushEventData.trim());
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return undefined;
+  }
+  const clientId = (parsed as Record<string, unknown>).clientId;
+  if (typeof clientId !== "string" || !clientId.trim()) {
+    return undefined;
+  }
+  return clientId.trim();
+}
+
+/** form_push τ╝ôσ¡ÿ∩╝ÜΣ╗àΘöÜτé╣µ╢êµü»µ¢┐µìó clientIdπÇücontent τ╜«τ⌐║∩╝îextension Σ╕║σÄƒσºï event data */
+function applyFormPushCacheOverrides(
+  messages: SerializedChatMessage[],
+  anchorMessageId: string,
+  formPushEventData: string,
+): SerializedChatMessage[] {
+  const overrideClientId =
+    parseFormPushClientIdFromEventData(formPushEventData);
+
+  return messages.map((item) => {
+    if (item.id !== anchorMessageId) {
+      return item;
+    }
+    return {
+      ...item,
+      ...(overrideClientId ? { clientId: overrideClientId } : {}),
+      type: MessageType.FormPush,
+      content: "",
+      extension: formPushEventData,
+    };
+  });
+}
+
+export function buildSellingLogisticsSessionCache(params: {
+  anchorMessageId: string;
+  sseEvent: string;
+  scenePayload: Record<string, unknown>;
+  msgList: (Message | RobotMessage)[];
+  requestId?: string;
+  /** form_push Σ║ïΣ╗╢σÄƒσºï data∩╝îτö¿Σ║ÄΘöÜτé╣ clientId / content / extension */
+  formPushEventData?: string;
+}): SellingLogisticsSessionCache | null {
+  const { messages, customerMessageId } = collectMsgListSliceUpToCustomer(
+    params.msgList,
+    params.anchorMessageId,
+  );
+  if (messages.length === 0) {
+    return null;
+  }
+
+  let serialized = messages.map(serializeChatMessage);
+  const eventData = params.formPushEventData?.trim();
+  if (eventData) {
+    serialized = applyFormPushCacheOverrides(
+      serialized,
+      params.anchorMessageId,
+      eventData,
+    );
+  }
+
+  return {
+    version: 1,
+    savedAt: Date.now(),
+    anchorMessageId: params.anchorMessageId,
+    sseEvent: params.sseEvent,
+    scenePayload: params.scenePayload,
+    requestId: params.requestId,
+    customerMessageId,
+    messages: serialized,
+  };
+}
+
+export function saveSellingLogisticsSessionCache(
+  payload: SellingLogisticsSessionCache,
+): boolean {
+  if (typeof sessionStorage === "undefined") return false;
+  try {
+    sessionStorage.setItem(
+      SELLING_LOGISTICS_SESSION_CACHE_KEY,
+      JSON.stringify(payload),
+    );
+    return true;
+  } catch (e) {
+    console.warn("[sellingLogisticsSessionCache] save failed:", e);
+    return false;
+  }
+}
+
+/** URL µÿ»σÉªµ¥ÑΦç¬σö«Σ╕¡τë⌐µ╡üτÖ╗σ╜òσ¢₧Φ╖│ */
+export function isFromSellingLogisticsReturn(
+  searchParams?: URLSearchParams,
+): boolean {
+  const fromParams = searchParams?.get("fromSellingLogistics");
+  if (fromParams === "true") return true;
+  if (typeof window === "undefined") return false;
+  return (
+    new URL(window.location.href).searchParams.get("fromSellingLogistics") ===
+    "true"
+  );
+}
+
+/** Σ╗Äσ£░σ¥ÇµáÅτº╗ΘÖñ fromSellingLogistics∩╝îΘü┐σàìσê╖µû░σÉÄΘçìσñìΦºªσÅæµüóσñìΘÇ╗Φ╛æ */
+export function stripFromSellingLogisticsUrlParam(): void {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("fromSellingLogistics")) return;
+  url.searchParams.delete("fromSellingLogistics");
+  window.history.replaceState({}, document.title, url.toString());
+}
+
+export function hasSellingLogisticsSessionCache(): boolean {
+  const cache = getSellingLogisticsSessionCache();
+  return !!cache?.messages?.length;
+}
+
+/** µÿ»σÉªµ╗íΦ╢│∩╝Üσ╖▓τÖ╗σ╜ò + URL µáçΦ«░ + µ£¼σ£░µ£ëτ╝ôσ¡ÿ */
+export function shouldRestoreSellingLogisticsSession(
+  searchParams?: URLSearchParams,
+): boolean {
+  return (
+    isSellingLogisticsUserAuthenticated() &&
+    isFromSellingLogisticsReturn(searchParams) &&
+    hasSellingLogisticsSessionCache()
+  );
+}
+
+export function getSellingLogisticsSessionCache(): SellingLogisticsSessionCache | null {
+  if (typeof sessionStorage === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(SELLING_LOGISTICS_SESSION_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as SellingLogisticsSessionCache;
+    if (parsed?.version !== 1 || !Array.isArray(parsed.messages)) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * µ╕àΘÖñµ£¼σ£░σö«Σ╕¡τë⌐µ╡üτ╝ôσ¡ÿπÇé
+ * σà╖Σ╜ôµ╕àΘÖñµù╢µ£║∩╝êτÖ╗σ╜òµêÉσèƒπÇüµÅÉΣ║ñΦí¿σìòπÇüτª╗σ╝ÇΘí╡Θ¥óτ¡ë∩╝ëτö▒Σ╕ÜσèíσÉÄτ╗¡ΦíÑσààπÇé
+ */
+export function clearSellingLogisticsSessionCache(): void {
+  if (typeof sessionStorage === "undefined") return;
+  try {
+    sessionStorage.removeItem(SELLING_LOGISTICS_SESSION_CACHE_KEY);
+  } catch (e) {
+    console.warn("[sellingLogisticsSessionCache] clear failed:", e);
+  }
+}
+
+/**
+ * µ£¬τÖ╗σ╜òµù╢∩╝Üµá╣µì«σ╜ôσëì msgList σêçτëçσ╣╢σåÖσàÑ sessionStorageπÇé
+ * σ╖▓τÖ╗σ╜òσêÖΦ╖│Φ┐çπÇé
+ */
+export function cacheSellingLogisticsContextIfGuest(params: {
+  anchorMessageId: string;
+  sseEvent: string;
+  scenePayload: Record<string, unknown>;
+  msgList: MessageStore["msgList"];
+  requestId?: string;
+  /** form_push SSE σÄƒσºï data σ¡ùτ¼ªΣ╕▓ */
+  formPushEventData?: string;
+}): SellingLogisticsSessionCache | null {
+  if (isSellingLogisticsUserAuthenticated()) {
+    return null;
+  }
+
+  const payload = buildSellingLogisticsSessionCache(params);
+  if (!payload) {
+    return null;
+  }
+
+  saveSellingLogisticsSessionCache(payload);
+  return payload;
+}
+
+function deserializeToUserMessage(item: SerializedChatMessage): Message {
+  return {
+    id: item.id,
+    clientId: item.clientId,
+    type: item.type ?? MessageType.Text,
+    headerType: item.headerType ?? HeaderType.MESSAGE,
+    senderType: MessageSender.USER,
+    content: item.content ?? "",
+    timestamp: item.timestamp,
+    senderName: item.senderName,
+    status: MessageStatus.Success,
+  };
+}
+
+/** SSE event σÉìΣ╕║ form_push∩╝êΣ╕Ä MessageType.FormPush Σ╕ÇΦç┤∩╝ë */
+export function isFormPushSseEvent(event?: string): boolean {
+  return event === MessageType.FormPush;
+}
+
+const FORM_PUSH_SSE_OMIT_KEYS = new Set([
+  "extension",
+  "content",
+  "type",
+  "headerType",
+  "senderType",
+]);
+
+/**
+ * Φºúµ₧É form_push Σ║ïΣ╗╢ data µ«╡ JSONπÇé
+ * extension σ¡ÿµò┤σîà SSE data∩╝êσÉ½ aiConversationIdπÇüclientId∩╝ë∩╝îΣ╕Ä session τ╝ôσ¡ÿΘöÜτé╣Σ╕ÇΦç┤∩╝î
+ * Σ╛¢ parseSellingLogisticsFormMeta µÅÉΣ║ñ∩╝¢σåàσ▒é formType τö▒ parseSellingLogisticsExtension Φºúµ₧ÉπÇé
+ */
+export function parseFormPushSseData(data: string): {
+  extension: string;
+  content: string;
+  scenePayload: Record<string, unknown>;
+} {
+  const fallbackExtension = JSON.stringify({
+    formType: FormPushType.SellingLogistics,
+    submitted: false,
+  });
+  if (!data?.trim() || data === "[DONE]") {
+    return { extension: fallbackExtension, content: "", scenePayload: {} };
+  }
+  try {
+    const parsed = JSON.parse(data) as Record<string, unknown>;
+    const content = typeof parsed.content === "string" ? parsed.content : "";
+    const scenePayload: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (FORM_PUSH_SSE_OMIT_KEYS.has(key)) continue;
+      scenePayload[key] = value;
+    }
+    return { extension: data.trim(), content, scenePayload };
+  } catch {
+    return {
+      extension: fallbackExtension,
+      content: "",
+      scenePayload: { payload: data },
+    };
+  }
+}
+
+function buildAnchorFormPushExtension(existing?: string): string {
+  if (existing?.trim()) {
+    return existing;
+  }
+  return JSON.stringify({
+    formType: FormPushType.SellingLogistics,
+    submitted: false,
+  });
+}
+
+function ensureUserSaveContent(content: string): string {
+  const parsed = tryParse(content);
+  if (parsed && typeof parsed.text === "string") {
+    return content;
+  }
+  return JSON.stringify({ text: content });
+}
+
+function buildRobotSaveContent(item: SerializedChatMessage): string {
+  const payload: Record<string, unknown> = {
+    text: item.content ?? "",
+    messageType: item.messageType ?? RobotMessageType.ROBOT_SSE_HISTORY,
+  };
+  return JSON.stringify(payload);
+}
+
+/** form_push ΦÉ╜σ║ô extension Σ╗àΣ┐¥σ¡ÿσåàσ▒éΦí¿σìòσàâµò░µì«∩╝îΦÇîΘ¥₧ SSE µò┤σîà */
+function resolveFormPushExtensionForSave(
+  extension?: string,
+): string | undefined {
+  if (!extension?.trim()) return undefined;
+  const parsed = tryParse(extension.trim());
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return extension.trim();
+  }
+  const outer = parsed as Record<string, unknown>;
+  const innerExtension = outer.extension;
+  if (typeof innerExtension === "string" && innerExtension.trim()) {
+    return innerExtension.trim();
+  }
+  return extension.trim();
+}
+
+function toSaveRobotInfoType(
+  item: SerializedChatMessage,
+  cache: SellingLogisticsSessionCache,
+): string {
+  if (
+    item.senderType === MessageSender.ROBOT &&
+    item.id === cache.anchorMessageId
+  ) {
+    return MessageType.FormPush;
+  }
+  return item.type ?? MessageType.Text;
+}
+
+/** σ░åσö«Σ╕¡τë⌐µ╡ü session τ╝ôσ¡ÿτëçµ«╡Φ╜¼Σ╕║ robot-message ΦÉ╜σ║ôσàÑσÅé */
+export function buildSaveRobotInfoPayloadFromSellingLogisticsCache(
+  cache: SellingLogisticsSessionCache,
+): SaveRobotInfoPropsType[] {
+  return cache.messages.map((item) => {
+    const clientId = item.clientId ?? item.id ?? "";
+    const isUser = item.senderType === MessageSender.USER;
+    const type = toSaveRobotInfoType(item, cache);
+    const payload: SaveRobotInfoPropsType = {
+      clientId,
+      clientTimestamp: item.timestamp,
+      content: isUser
+        ? ensureUserSaveContent(item.content ?? "")
+        : type === MessageType.FormPush
+          ? ""
+          : buildRobotSaveContent(item),
+      senderType: item.senderType,
+      type,
+    };
+    if (type === MessageType.FormPush && item.extension?.trim()) {
+      payload.extension = resolveFormPushExtensionForSave(item.extension);
+    }
+    if (item.extension) {
+      const jsonExtension = tryParse(item.extension);
+      if (jsonExtension && jsonExtension.aiConversationId) {
+        payload.aiConversationId = jsonExtension.aiConversationId;
+      }
+    }
+    return payload;
+  });
+}
+
+/** τÖ╗σ╜òσ¢₧Φ╖│µüóσñìσÉÄ∩╝îσ░åτ╝ôσ¡ÿΣ╝ÜΦ»¥τëçµ«╡ΦÉ╜σ║ô */
+export async function persistSellingLogisticsSessionMessages(
+  cache: SellingLogisticsSessionCache,
+): Promise<void> {
+  if (!cache.messages?.length) return;
+  await saveRobotInfo(
+    buildSaveRobotInfoPayloadFromSellingLogisticsCache(cache),
+  );
+}
+
+function deserializeToRobotMessage(
+  item: SerializedChatMessage,
+  cache: SellingLogisticsSessionCache,
+): RobotMessage {
+  const isAnchor = item.id === cache.anchorMessageId;
+  return {
+    id: item.id,
+    clientId: item.clientId,
+    type: isAnchor ? MessageType.FormPush : (item.type ?? MessageType.Text),
+    headerType: item.headerType ?? HeaderType.MESSAGE,
+    senderType: MessageSender.ROBOT,
+    messageType: item.messageType ?? RobotMessageType.ROBOT_SSE_HISTORY,
+    content: item.content ?? "",
+    timestamp: item.timestamp,
+    senderName: item.senderName ?? "µÖ║Φâ╜σè⌐µëï",
+    extension: isAnchor
+      ? item.extension?.trim() || buildAnchorFormPushExtension(item.extension)
+      : item.extension,
+    streaming: false,
+    error: item.error,
+    robotData: isAnchor
+      ? { ...(item.robotData ?? {}), ...cache.scenePayload }
+      : (item.robotData ?? {}),
+  };
+}
+
+/**
+ * σ░å sessionStorage Σ╕¡τÜäΣ╝ÜΦ»¥τëçµ«╡σåÖσ¢₧ msgList∩╝îσåÖσ«îσÉÄµ╕àΘÖñτ╝ôσ¡ÿπÇé
+ * @returns µÿ»σÉªµêÉσèƒµüóσñìΦç│σ░æΣ╕Çµ¥íµ╢êµü»
+ */
+export function restoreSellingLogisticsSessionToChat(actions: {
+  addOutgoingMessage: (msg: Message) => Message;
+  setRobotMessage: (msg: RobotMessage) => void;
+}): boolean {
+  const cache = getSellingLogisticsSessionCache();
+  if (!cache?.messages?.length) {
+    return false;
+  }
+
+  for (const item of cache.messages) {
+    if (item.senderType === MessageSender.USER) {
+      actions.addOutgoingMessage(deserializeToUserMessage(item));
+      continue;
+    }
+    if (item.senderType === MessageSender.ROBOT) {
+      actions.setRobotMessage(deserializeToRobotMessage(item, cache));
+    }
+  }
+
+  clearSellingLogisticsSessionCache();
+  stripFromSellingLogisticsUrlParam();
+  return true;
+}
+
+
+===== webpack://_N_E/./app/components/robot/components/aiSellingLogistics/buildSubmitMessage.ts =====
+
+import {
+  formatMultiSelectFieldValue,
+  formatSellingFormSubmitText,
+  resolveFieldSource,
+  resolveOptionLabel,
+  resolveOptionValue,
+} from "../sellingFormShared/buildSubmitMessage";
+import type { LogisticsFieldSource } from "@/app/api/logistics";
+import type { FieldMode } from "../sellingFormShared/types";
+
+export {
+  resolveFieldSource,
+  resolveOptionLabel,
+  resolveOptionValue,
+  buildSellingFormOutgoingPayload as buildSellingLogisticsOutgoingPayload,
+} from "../sellingFormShared/buildSubmitMessage";
+
+/** σö«Σ╕¡τë⌐µ╡üτ╗¡Φüè∩╝Üσ▒òτñ║ holding µûçµíê∩╝êΦ«óσìòσÅ╖Σ╕Äτë⌐µ╡üσìòσÅ╖σ¥çΣ╕║Σ╕ïµïëΘÇëµï⌐µù╢∩╝ë */
+export function shouldShowSellingLogisticsHoldingReply(params: {
+  chatType?: string;
+  submissionId?: string;
+  orderSource?: LogisticsFieldSource;
+  trackingSource?: LogisticsFieldSource;
+}): boolean {
+  if (
+    params.chatType !== "sellingLogisticsSubmitted" ||
+    !params.submissionId?.trim()
+  ) {
+    return false;
+  }
+  return (
+    params.orderSource === "selected" && params.trackingSource === "selected"
+  );
+}
+
+/** σö«Σ╕¡τë⌐µ╡üτ╗¡Φüè∩╝Üσ▒òτñ║ Live Chat σ╝òσ»╝µûçµíê∩╝êΦ«óσìòσÅ╖µêûτë⌐µ╡üσìòσÅ╖Σ╕║µëïσè¿Φ╛ôσàÑµù╢∩╝ë */
+export function shouldShowSellingLogisticsBothSelectedReply(params: {
+  chatType?: string;
+  submissionId?: string;
+  orderSource?: LogisticsFieldSource;
+  trackingSource?: LogisticsFieldSource;
+}): boolean {
+  if (
+    params.chatType !== "sellingLogisticsSubmitted" ||
+    !params.submissionId?.trim()
+  ) {
+    return false;
+  }
+  return !(
+    params.orderSource === "selected" && params.trackingSource === "selected"
+  );
+}
+
+export type SellingLogisticsFormValues = {
+  orderChannel: string;
+  orderId: string;
+  trackingNumber?: string | string[];
+};
+
+export type SellingLogisticsSubmitLabels = {
+  orderChannel: string;
+  orderId: string;
+  trackingNumber: string;
+};
+
+export const formatTrackingNumberValue = formatMultiSelectFieldValue;
+
+export function formatSellingLogisticsSubmitText(
+  channelLabel: string,
+  orderId: string,
+  trackingNumber: string,
+  labels: SellingLogisticsSubmitLabels,
+): string {
+  return formatSellingFormSubmitText(channelLabel, orderId, trackingNumber, {
+    orderChannel: labels.orderChannel,
+    orderId: labels.orderId,
+    thirdField: labels.trackingNumber,
+  });
+}
+
+export type { FieldMode };
+
+
+===== webpack://_N_E/./app/components/robot/components/aiSellingOrders/buildSubmitMessage.ts =====
+
+import {
+  formatSellingFormSubmitText,
+  formatSingleSelectFieldValue,
+} from "../sellingFormShared/buildSubmitMessage";
+import type { LogisticsFieldSource } from "@/app/api/logistics";
+import { SELLING_ORDERS_SUBMITTED_CHAT_TYPE } from "./constants";
+
+/** σö«Σ╕¡Φ«óσìòτ╗¡Φüè∩╝Üσ▒òτñ║ holding µûçµíê∩╝êΦ«óσìòσÅ╖Σ╕Äσòåσôüσ¥çΣ╕║Σ╕ïµïëΘÇëµï⌐µù╢∩╝ë */
+export function shouldShowSellingOrdersHoldingReply(params: {
+  chatType?: string;
+  submissionId?: string;
+  orderSource?: LogisticsFieldSource;
+  productSource?: LogisticsFieldSource;
+}): boolean {
+  if (
+    params.chatType !== SELLING_ORDERS_SUBMITTED_CHAT_TYPE ||
+    !params.submissionId?.trim()
+  ) {
+    return false;
+  }
+  return (
+    params.orderSource === "selected" && params.productSource === "selected"
+  );
+}
+
+/** σö«Σ╕¡Φ«óσìòτ╗¡Φüè∩╝Üσ▒òτñ║ Live Chat σ╝òσ»╝µûçµíê∩╝êΦ«óσìòσÅ╖µêûσòåσôüΣ╕║µëïσè¿Φ╛ôσàÑµù╢∩╝ë */
+export function shouldShowSellingOrdersBothSelectedReply(params: {
+  chatType?: string;
+  submissionId?: string;
+  orderSource?: LogisticsFieldSource;
+  productSource?: LogisticsFieldSource;
+}): boolean {
+  if (
+    params.chatType !== SELLING_ORDERS_SUBMITTED_CHAT_TYPE ||
+    !params.submissionId?.trim()
+  ) {
+    return false;
+  }
+  return !(
+    params.orderSource === "selected" && params.productSource === "selected"
+  );
+}
+
+export type SellingOrdersFormValues = {
+  orderChannel: string;
+  orderId: string;
+  /** Σ╕ïµïëσñÜΘÇëΣ╕║ string[]∩╝îµëïσè¿Φ╛ôσàÑΣ╕║ string */
+  product?: string | string[];
+};
+
+export { formatSingleSelectFieldValue as formatProductValue };
+
+export function formatSellingOrdersSubmitText(
+  channelLabel: string,
+  orderId: string,
+  product: string,
+  labels: {
+    orderChannel: string;
+    orderId: string;
+    product: string;
+  },
+): string {
+  return formatSellingFormSubmitText(channelLabel, orderId, product, {
+    orderChannel: labels.orderChannel,
+    orderId: labels.orderId,
+    thirdField: labels.product,
+  });
+}
+
+
+===== webpack://_N_E/./app/components/robot/components/sellingFormShared/buildSubmitMessage.ts =====
+
+import { MessageType } from "@/app/store/types";
+import { createClientUUid } from "@/app/utils/string";
+import type { LogisticsFieldSource } from "@/app/api/logistics";
+import type { FieldMode, SelectOption } from "./types";
+
+export function resolveFieldSource(mode: FieldMode): LogisticsFieldSource {
+  return mode === "select" ? "selected" : "manual";
+}
+
+export function resolveOptionLabel(
+  value: string,
+  options: SelectOption[],
+): string {
+  return options.find((o) => o.value === value)?.label ?? value;
+}
+
+export function resolveOptionValue(
+  labelOrValue: string,
+  options: SelectOption[],
+): string {
+  const trimmed = labelOrValue.trim();
+  if (!trimmed) return trimmed;
+  if (options.some((o) => o.value === trimmed)) return trimmed;
+  const byLabel = options.find((o) => o.label === trimmed);
+  return byLabel?.value ?? trimmed;
+}
+
+/** σñÜΘÇëσÇ╝Σ╗ÑΦï▒µûçΘÇùσÅ╖µï╝µÄÑ∩╝êτë⌐µ╡üΦ┐╜Φ╕¬σÅ╖∩╝ë */
+export function formatMultiSelectFieldValue(
+  value: string | string[] | undefined,
+  mode: FieldMode,
+  options: SelectOption[],
+): string {
+  if (mode === "input") {
+    return typeof value === "string" ? value.trim() : "";
+  }
+  const ids = Array.isArray(value) ? value : value ? [value] : [];
+  return ids
+    .map((id) => resolveOptionLabel(String(id), options))
+    .filter(Boolean)
+    .join(",");
+}
+
+/** σìòΘÇëΣ╕ïµïëµêûµëïσè¿Φ╛ôσàÑ∩╝êσòåσôü∩╝ë */
+export function formatSingleSelectFieldValue(
+  value: string | string[] | undefined,
+  mode: FieldMode,
+  options: SelectOption[],
+): string {
+  if (mode === "input") {
+    return typeof value === "string" ? value.trim() : "";
+  }
+  const id = Array.isArray(value) ? value[0] : value;
+  return id ? resolveOptionLabel(String(id), options) : "";
+}
+
+export type SellingFormSubmitLabels = {
+  orderChannel: string;
+  orderId: string;
+  thirdField: string;
+};
+
+export function formatSellingFormSubmitText(
+  channelLabel: string,
+  orderId: string,
+  thirdFieldValue: string,
+  labels: SellingFormSubmitLabels,
+): string {
+  return [
+    `<p><b>${labels.orderChannel}</b> ${channelLabel}</p>`,
+    `<p><b>${labels.orderId}</b> ${orderId}</p>`,
+    `<p><b>${labels.thirdField}</b> ${thirdFieldValue}</p>`,
+  ].join("");
+}
+
+export function buildSellingFormOutgoingPayload(text: string) {
+  return {
+    clientId: createClientUUid(MessageType.Text),
+    content: JSON.stringify({ text }),
+  };
+}
+
+
+===== webpack://_N_E/./app/utils/interactionCardSse.ts =====
+
+import { tryParse } from "@/app/utils/object";
+
+/** SSE event σÉì∩╝êµ£ìσèíτ½»Σ╕ïσÅæΣ║ñΣ║Æσìíτëçµù╢Σ╜┐τö¿∩╝ë∩╝îΣ╕Äµ╢êµü»ΦÉ╜σ║ô type Σ╕ÇΦç┤ */
+export const INTERACTION_CARD_SSE_EVENT = "interaction_card";
+
+/** µÄÆΘÜ£ΘÇëΘí╣τ╗¡Φüè / τ¢┤µÄÑτöƒµêÉτ¡öµíêµù╢ /sse/chat µÉ║σ╕ªτÜä chatType */
+export const INTERACTION_CARD_CHAT_TYPE = "interactionCardSubmitted";
+
+/** πÇîτ¢┤µÄÑτöƒµêÉτ¡öµíêπÇìµîëΘÆ«σ¢║σ«Ü Query µûçµíê∩╝êσÄƒµá╖Σ╜£Σ╕║ input σÅæτ╗Ö HA∩╝îΣ╕ìσÅ»µ£¼σ£░σîû∩╝ë */
+export const DIRECT_ANSWER_QUERY = "τ¢┤µÄÑτöƒµêÉτ¡öµíê";
+
+/** τÄ░Φ▒íΘÇëµï⌐σìí∩╝Üµö╢µò¢µòàΘÜ£σ£║µÖ» */
+export const CARD_TYPE_PHENOMENON = "phenomenon_choice";
+/** Φºúσå│µû╣µíêσìí∩╝Üτ╗Öσç║Φºúσå│µ¡ÑΘ¬ñ + τí«Φ«ñτ╗ôµ₧£ */
+export const CARD_TYPE_SOLUTION = "solution";
+
+export function isInteractionCardSseEvent(event?: string): boolean {
+  return event === INTERACTION_CARD_SSE_EVENT;
+}
+
+/** σìíτëçσåàσìòΣ╕¬ΘÇëΘí╣ */
+export interface InteractionCardOption {
+  label: string;
+  /** σ¢╛µûçΘÇëΘí╣τ╝⌐τòÑσ¢╛∩╝¢µ£ëσÇ╝µù╢Σ╗Ñσ¢╛µûçΘÇëΘí╣σìíµ╕▓µƒô */
+  image?: string;
+}
+
+/** interaction_card_info σåàσ▒éτ╗ôµ₧ä∩╝êΣ╕Ä HA σìÅΦ««σÉîµ₧ä∩╝ë */
+export interface InteractionCardInfo {
+  cardType?: string;
+  /** σ╝òσ»╝µ«╡∩╝îΣ╗àτ¼¼Σ╕Çσ╝áσìíΘÇÜσ╕╕µ£ë∩╝îτö▒ HA σå│σ«Ü∩╝¢µ£ëσÇ╝σ▒òτñ║πÇîσà│Σ║ÄπÇöXXπÇòτÜäµÄÆµƒÑΓÇªπÇì */
+  guidance?: string;
+  scenarioTitle?: string;
+  scenarioDescription?: string;
+  scenarioImages: string[];
+  /** Φ¡ªσæèµûçµíê∩╝îµ£ëσÇ╝µù╢Θ╗äΦë▓σ║òΦë▓Φ¡ªσæèµ¥í */
+  warning?: string;
+  optionsDescription?: string;
+  options: InteractionCardOption[];
+}
+
+export interface InteractionCardPayload {
+  /** σìíτëçτ¿│σ«Ü id∩╝îτö¿Σ║ÄΦÉ╜σ║ô/σÄ╗Θçì∩╝îτ╗¡Φüèµù╢Σ╜£Σ╕║ interactionCardClientId σ¢₧Σ╝á */
+  clientId?: string;
+  cardType?: string;
+  info: InteractionCardInfo;
+  /** σÄåσÅ▓σ¢₧τ£ï∩╝Üσ╖▓ΦÉ╜σ║ôσìíτëçτÜäΘÇëΣ╕¡Θí╣ label∩╝êσÉÄτ½» best-effort σåÖσàÑ extension∩╝ë */
+  selectedLabel?: string;
+  /** σÄåσÅ▓σ¢₧τ£ï∩╝Üσ╖▓ΦÉ╜σ║ôσìíτëçτÜäΘÇëΣ╕¡Θí╣Σ╕ïµáç */
+  selectedIndex?: number;
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is string => typeof v === "string" && !!v.trim());
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function readIndex(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const n = Number(value);
+    if (Number.isInteger(n) && n >= 0) return n;
+  }
+  return undefined;
+}
+
+/** σÑæτ║ªσ¡ùµ«╡Σ╕║ image∩╝¢σà╝σ«╣ images µò░τ╗äσÅûΘªûσ╝á */
+function resolveOptionImage(
+  record: Record<string, unknown>,
+): string | undefined {
+  const single = readString(record.image);
+  if (single) return single.trim();
+  return toStringArray(record.images)[0];
+}
+
+function parseOptions(value: unknown): InteractionCardOption[] {
+  if (!Array.isArray(value)) return [];
+  return value.reduce<InteractionCardOption[]>((acc, item) => {
+    if (item && typeof item === "object" && !Array.isArray(item)) {
+      const record = item as Record<string, unknown>;
+      const label = typeof record.label === "string" ? record.label.trim() : "";
+      if (label) {
+        const image = resolveOptionImage(record);
+        acc.push({ label, ...(image ? { image } : {}) });
+      }
+    } else if (typeof item === "string" && item.trim()) {
+      acc.push({ label: item.trim() });
+    }
+    return acc;
+  }, []);
+}
+
+function parseInfo(value: unknown): InteractionCardInfo {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { scenarioImages: [], options: [] };
+  }
+  const record = value as Record<string, unknown>;
+  return {
+    cardType: readString(record.card_type),
+    guidance: readString(record.guidance),
+    scenarioTitle: readString(record.scenario_title),
+    scenarioDescription: readString(record.scenario_description),
+    scenarioImages: toStringArray(record.scenario_images),
+    warning: readString(record.warning),
+    optionsDescription: readString(record.options_description),
+    options: parseOptions(record.options),
+  };
+}
+
+/** extension µÿ»σÉªµë┐Φ╜╜σìíτëçµò░µì«∩╝êσÉ½ interaction_card_info µêûµá╕σ┐âσìíτëçσ¡ùµ«╡∩╝ë */
+function isCardHost(record: Record<string, unknown>): boolean {
+  return (
+    record.interaction_card_info !== undefined ||
+    record.scenario_title !== undefined ||
+    record.scenario_description !== undefined ||
+    record.options !== undefined
+  );
+}
+
+/**
+ * Φºúσ╝ÇΣ┐íσ░üΣ╕èτÜä extension σ¡ùµ«╡∩╝ÜσÅ»Φâ╜µÿ» JSON σ¡ùτ¼ªΣ╕▓µêûσ╖▓Φºúµ₧Éσ»╣Φ▒íπÇé
+ * Σ╗àσ╜ôσà╢µë┐Φ╜╜σìíτëçµò░µì«µù╢µëìΦ┐öσ¢₧∩╝îσÉªσêÖσ¢₧ΘÇÇσñûσ▒éπÇé
+ */
+function unwrapExtension(value: unknown): Record<string, unknown> | null {
+  let obj: unknown = value;
+  if (typeof value === "string") {
+    if (!value.trim()) return null;
+    obj = tryParse(value.trim());
+  }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+    return null;
+  }
+  const record = obj as Record<string, unknown>;
+  return isCardHost(record) ? record : null;
+}
+
+/**
+ * Φºúµ₧É interaction_card SSE data / σÄåσÅ▓µ╢êµü» extensionπÇé
+ * σà╝σ«╣Σ╕ëτºìτ╗ôµ₧ä∩╝Ü
+ * 1) σåàσ▒é interaction_card_info τ¢┤µÄÑΣ╕ïσÅæ∩╝Ü`{ interaction_card_info: {...} }`
+ * 2) σåàσ▒éσìíτëçσ¡ùµ«╡σ╣│Θô║∩╝Ü`{ scenario_title, options, ... }`
+ * 3) ΦÉ╜σ║ô / σÄåσÅ▓ / SSE µò┤σîàΣ┐íσ░ü∩╝Ü`{ type, clientId, card_type,
+ *    extension: "<stringified card json>", ... }`∩╝îσìíτëçµò░µì«σ£¿σ¡ùτ¼ªΣ╕▓σîûτÜä extension σåà
+ */
+export function parseInteractionCardPayload(
+  raw?: string | null,
+): InteractionCardPayload | null {
+  if (raw == null || typeof raw !== "string" || !raw.trim()) {
+    return null;
+  }
+  if (raw === "[DONE]") {
+    return null;
+  }
+  const parsed = tryParse(raw.trim());
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  const outer = parsed as Record<string, unknown>;
+  // µë┐Φ╜╜σìíτëçµò░µì«τÜäσ»╣Φ▒í∩╝ÜΣ╝ÿσàêΣ┐íσ░üσåà extension∩╝îσà╢µ¼íσñûσ▒éµ£¼Φ║½
+  const cardHost = unwrapExtension(outer.extension) ?? outer;
+
+  const rawInfo =
+    cardHost.interaction_card_info !== undefined
+      ? cardHost.interaction_card_info
+      : cardHost;
+  const info = parseInfo(rawInfo);
+
+  // clientId / card_type / ΘÇëΣ╕¡µÇüΣ╝ÿσàêσÅûσñûσ▒éΣ┐íσ░ü∩╝îσ¢₧ΘÇÇσìíτëçµë┐Φ╜╜σ»╣Φ▒í
+  return {
+    clientId: readString(outer.clientId) ?? readString(cardHost.clientId),
+    cardType:
+      info.cardType ??
+      readString(outer.card_type) ??
+      readString(cardHost.card_type),
+    info,
+    selectedLabel:
+      readString(outer.selectedLabel) ?? readString(cardHost.selectedLabel),
+    selectedIndex:
+      readIndex(outer.selectedIndex) ?? readIndex(cardHost.selectedIndex),
+  };
+}
+
+/** µÿ»σÉªΣ╕║σÅ»µ╕▓µƒôτÜäΣ║ñΣ║Æσìíτëç∩╝êΦç│σ░æΦªüµ£ëµáçΘóÿ / µÅÅΦ┐░ / ΘÇëΘí╣∩╝ë */
+export function isRenderableInteractionCardPayload(
+  payload: InteractionCardPayload | null,
+): payload is InteractionCardPayload {
+  if (!payload) return false;
+  const { info } = payload;
+  return (
+    !!info.scenarioTitle ||
+    !!info.scenarioDescription ||
+    !!info.guidance ||
+    info.options.length > 0
+  );
+}
+
+/** Φºúµ₧É interaction_card SSE data µÿ»σÉªσÅ»µ╕▓µƒô */
+export function isInteractionCardSseData(data: string): boolean {
+  return isRenderableInteractionCardPayload(parseInteractionCardPayload(data));
+}
+
+/**
+ * Θ╗ÿΦ«ñσ╕º∩╝êµùá event σÉì∩╝ëσà£σ║òΦ»åσê½∩╝ÜσÉÄτ½»σÅ»Φâ╜Σ╗Ñµò┤σîàΣ┐íσ░ü∩╝êσÉ½ `type=interaction_card`∩╝ë
+ * Σ╜£Σ╕║Θ╗ÿΦ«ñ data Σ╕ïσÅæΦÇîΘ¥₧σæ╜σÉìΣ║ïΣ╗╢πÇéΣ╗àσ╜ô `type` σæ╜Σ╕¡Σ╕öσìíτëçσÅ»µ╕▓µƒôµù╢µëìΦ«ñσ«Ü∩╝î
+ * Θü┐σàìΦ»»σÉ₧µÖ«ΘÇÜµûçµ£¼ / [DONE] / delta σ╕ºπÇé
+ */
+export function isInteractionCardEnvelopeData(data: string): boolean {
+  if (!data || data === "[DONE]") return false;
+  const parsed = tryParse(data.trim());
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return false;
+  }
+  const record = parsed as Record<string, unknown>;
+  if (record.type !== INTERACTION_CARD_SSE_EVENT) return false;
+  return isRenderableInteractionCardPayload(parseInteractionCardPayload(data));
+}
+
+/** σ£¿ΘÇëΘí╣Σ╕¡µîë label σî╣ΘàìΣ╕ïµáç∩╝êσÉÄτ½»µ£Çτ╗êΣ╗Ñ input=label σî╣ΘàìΣ╕║σçå∩╝îµ¡ñσñäΣ╗àσëìτ½»µÅÉτñ║σÇ╝∩╝ë */
+export function findOptionIndexByLabel(
+  options: InteractionCardOption[],
+  label: string,
+): number | undefined {
+  const target = label.trim();
+  const idx = options.findIndex((o) => o.label.trim() === target);
+  return idx === -1 ? undefined : idx;
+}
+

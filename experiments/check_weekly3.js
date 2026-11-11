@@ -1,0 +1,1 @@
+﻿const fs=require('fs');const s=fs.readFileSync('weekly-findings/findings_11_10_2026.md','utf8');console.log('cjk',(s.match(/[\u3400-\u9fff]/g)||[]).length,'len',s.length);console.log(s.slice(0,400));console.log('--- headings ---');for(const l of s.split('\n'))if(l.startsWith('#'))console.log(l);

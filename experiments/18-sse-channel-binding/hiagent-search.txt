@@ -1,0 +1,25 @@
+﻿webpack://_N_E/./app/services/trackSession.ts:145: export function getTempUserId(): string {
+webpack://_N_E/./app/store/types.ts:548: userId: string;
+webpack://_N_E/./app/types/typeConfig/report.ts:54: userId: string;
+webpack://_N_E/./app/utils/string.ts:63: * σÅìΘªêτ¡ëµÄÑσÅúτÜä userIdπÇé
+webpack://_N_E/./app/utils/string.ts:69: export function getGuestUserId() {
+webpack://_N_E/./app/ui/collapsibleMessage/index.tsx:37: const cssVariables: CSSProperties = {
+webpack://_N_E/./app/ui/collapsibleMessage/index.tsx:82: <div className={`${styles.container} ${className}`} style={cssVariables}>
+webpack://_N_E/./app/components/chat/MessageItem.tsx:15: import { getDisplaySenderName } from "@/app/utils/agentIdentity";
+webpack://_N_E/./app/components/robot/components/guideMenu/index.tsx:29: import { getGuestUserId, createClientUUid } from "@/app/utils/string";
+webpack://_N_E/./app/components/robot/components/guideMenu/index.tsx:206: userId: isAuthenticated ? String(user?.cusId) : getGuestUserId(),
+webpack://_N_E/./app/components/robot/components/AIFooterShared/useAIFooterFeedback.ts:85: userId: user?.cusId || sessionId,
+webpack://_N_E/./app/components/robot/components/aiFeedback/index.tsx:147: userId: user?.cusId || sessionId,
+webpack://_N_E/./app/components/robot/components/AIFooterShared/Complaint.tsx:132: userId: user?.cusId || "",
+webpack://_N_E/./app/components/ChatInput/index.tsx:39: import { getGuestUserId, createClientUUid } from "@/app/utils/string";
+webpack://_N_E/./app/components/ChatInput/index.tsx:423: userId: getGuestUserId(),
+webpack://_N_E/./app/api/robot/handyApp.ts:30: userId: string;
+webpack://_N_E/./app/api/chatContent.ts:93: userId: string;
+webpack://_N_E/./app/api/mallCard.ts:17: aiUserId?: string;
+webpack://_N_E/./app/api/robot/chatContent.ts:18: userId: string;
+webpack://_N_E/./app/components/robot/components/AssociateButtonList/index.tsx:17: getGuestUserId,
+webpack://_N_E/./app/components/robot/components/AssociateButtonList/index.tsx:349: userId: getGuestUserId(),
+webpack://_N_E/./app/config/sentry.ts:21: /contentWindow\.document|contentDocument|window\.webkit|__gCrWeb|instantSearchSDK|Can't find variable: (gmo|_AutofillCallbackHandler)|Object Not Found Matching Id:/i;
+webpack://_N_E/./app/lib/TrackProvider.tsx:7: getTempUserId,
+webpack://_N_E/./app/lib/TrackProvider.tsx:120: const tempUserId = getTempUserId();
+webpack://_N_E/./app/lib/TrackProvider.tsx:216: temp_user_id: tempUserId,

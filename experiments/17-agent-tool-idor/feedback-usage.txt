@@ -1,0 +1,10 @@
+﻿
+### webpack://_N_E/./app/store/types.ts
+550 feedbackContent: string;
+586 * Σ╛ï∩╝Ü'{"feedback":{"feedbackClass":2,"feedbackContent":"...","feedbackType":40,"updatedAt":""}}'
+
+### webpack://_N_E/./app/components/robot/components/aiFeedback/index.tsx
+90 const [feedbackContent, setFeedbackContent] = useState<string>("");
+
+### webpack://_N_E/./app/components/robot/components/AIFooterShared/Satisfy.tsx
+78 feedback: feedback.feedbackContent ?? "",

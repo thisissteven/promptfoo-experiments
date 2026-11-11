@@ -1,0 +1,172 @@
+﻿
+===== webpack://_N_E/./app/api/file.ts =====
+
+import { getPageLangToHeader } from "@/app/locales";
+import { ReportScene, reportScene } from "../services/DataReporter";
+import { UploadFileInfo } from "../store/types";
+
+interface ExtraData {
+  fileId: string;
+}
+export interface UploadResponse extends ExtraData {
+  file?: File;
+  fileId: string;
+  filePath: string;
+  fileType: string;
+  sourceFileName: string;
+}
+
+/** Σ╕èΣ╝áσñ▒Φ┤Ñµù╢τö▒ onError σ¢₧Σ╝á∩╝îmsg/code µ¥ÑΦç¬ Hub Σ╕Üσèíσôìσ║ö */
+export type FileUploadErrorInfo = UploadFileInfo & {
+  msg?: string;
+  code?: string;
+};
+
+const isEnv = process.env.NODE_ENV === "development";
+const fileBaseUrl = isEnv ? "/hub" : process.env.NEXT_PUBLIC_API_HUB_HOST;
+
+/** Chrome/WebView σ╕╕ΦºüΣ╕║ "Failed to fetch (hostname)"∩╝îΣ╕ìΣ╗àµÿ»τ║» "Failed to fetch" */
+function isFetchNetworkError(error: unknown): error is TypeError {
+  return (
+    error instanceof TypeError &&
+    (error.message === "Failed to fetch" ||
+      error.message.startsWith("Failed to fetch"))
+  );
+}
+
+function classifyUploadError(error: unknown): Record<string, unknown> {
+  if (isFetchNetworkError(error)) {
+    const hostMatch = error.message.match(/Failed to fetch \(([^)]+)\)/);
+    return {
+      name: error.name,
+      message: error.message,
+      type: "network_error",
+      failedHost: hostMatch?.[1],
+      description:
+        "No HTTP response: CORS, DNS, TLS, connection reset, timeout, or WebView network policy",
+    };
+  }
+  if (error instanceof DOMException && error.name === "AbortError") {
+    return {
+      name: error.name,
+      message: error.message,
+      type: "aborted",
+      description:
+        "Upload request was aborted (navigation, unmount, or cancel)",
+    };
+  }
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      type: "error",
+      stack: error.stack,
+    };
+  }
+  return { type: "unknown", raw: String(error) };
+}
+
+function getUploadReportContext(
+  file: File,
+  uploadFileUrl: string,
+  fileId: string,
+) {
+  return {
+    url: uploadFileUrl,
+    originFileId: fileId,
+    fileName: file.name,
+    fileSize: file.size,
+    fileType: file.type || "unknown",
+    pageOrigin:
+      typeof window !== "undefined" ? window.location.origin : undefined,
+    online: typeof navigator !== "undefined" ? navigator.onLine : undefined,
+    visibility:
+      typeof document !== "undefined" ? document.visibilityState : undefined,
+    userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
+  };
+}
+
+export async function fileUploadApi({
+  file,
+  fileId,
+  onError,
+  onSuccess,
+}: {
+  file: File;
+  fileId: string;
+  onError: (fileId: string, fileInfo: FileUploadErrorInfo) => void;
+  onSuccess: (data: UploadResponse) => void;
+}) {
+  const uploadFileUrl = `${fileBaseUrl}/file/fileRecord/csm/uploadWithName?systemCode=CSM&bizCode=csm_private&dir=im`;
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    reportScene(
+      ReportScene.UPLOAD_FILE,
+      JSON.stringify({
+        fileName: file.name,
+        fileId,
+        status: "start",
+      }),
+    );
+    const response = await fetch(uploadFileUrl, {
+      method: "POST",
+      headers: {
+        "X-Bbl-Official-Site-Region": getPageLangToHeader(),
+      },
+      body: formData,
+    });
+    if (!response.ok) {
+      onError(fileId, { file, fileId });
+      reportScene(
+        ReportScene.API_ERROR,
+        JSON.stringify({
+          ...getUploadReportContext(file, uploadFileUrl, fileId),
+          errorType: "http_error",
+          status: response.status,
+          statusText: response.statusText,
+          headers: [...response.headers.entries()],
+        }),
+      );
+      return;
+    }
+    const data = await response.json();
+    if (data.code === "000000") {
+      onSuccess({
+        ...data.data,
+        fileId,
+        file,
+      });
+      reportScene(
+        ReportScene.UPLOAD_FILE,
+        JSON.stringify({
+          originFileId: fileId,
+          status: "success",
+        }),
+      );
+    } else {
+      const bizMsg = typeof data.msg === "string" ? data.msg : undefined;
+      const bizCode = typeof data.code === "string" ? data.code : undefined;
+      reportScene(
+        ReportScene.UPLOAD_FILE,
+        JSON.stringify({
+          originFileId: fileId,
+          code: bizCode,
+          msg: bizMsg,
+          status: "error code",
+        }),
+      );
+      onError(fileId, { file, fileId, msg: bizMsg, code: bizCode });
+    }
+  } catch (error) {
+    onError(fileId, { file, fileId });
+    reportScene(
+      ReportScene.API_ERROR,
+      JSON.stringify({
+        ...getUploadReportContext(file, uploadFileUrl, fileId),
+        error: classifyUploadError(error),
+      }),
+    );
+  }
+}
+

@@ -1,0 +1,11 @@
+﻿
+### webpack://_N_E/./app/api/auth.ts
+10 export interface SocketTicket {
+11 ticket?: string;
+29 export const login = (ticket: string) => {
+30 return request.post<LoginInfo>("/cus/auth/ticket/login", {
+31 ticket,
+47 export const getSocketTicket = () => {
+48 return request.get<SocketTicket>("/cus/auth/ws/ticket", {
+67 ticketNum: string;
+68 ticketUrl: string;

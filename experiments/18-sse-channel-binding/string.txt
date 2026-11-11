@@ -1,0 +1,96 @@
+﻿
+===== webpack://_N_E/./app/utils/string.ts =====
+
+import { v4 as uuidv4 } from "uuid";
+import { MessageType } from "../store/types";
+
+// µ»Åµ¼íΘâ╜µÿ»µû░τÜä
+export const createClientUUid = (msgType: MessageType) => {
+  return `clientID_${msgType}_${uuidv4()}`;
+};
+
+// µ╖╗σèáµûçµ£¼Φ╜¼Σ╣ëσç╜µò░
+export const escapeTextContent = (text: string): string => {
+  return text
+    .replace(/\\/g, "\\\\") // Φ╜¼Σ╣ëσÅìµû£µ¥á
+    .replace(/"/g, '\\"') // Φ╜¼Σ╣ëσÅîσ╝òσÅ╖
+    .replace(/\n/g, "\\n") // Φ╜¼Σ╣ëµìóΦíîτ¼ª
+    .replace(/\r/g, "\\r") // Φ╜¼Σ╣ëσ¢₧Φ╜ªτ¼ª
+    .replace(/\t/g, "\\t") // Φ╜¼Σ╣ëσê╢Φí¿τ¼ª
+    .replace(/\f/g, "\\f"); // Φ╜¼Σ╣ëµìóΘí╡τ¼ª
+};
+/**
+ * σñìσê╢µûçµ£¼σê░σë¬Φ┤┤µ¥┐
+ * @param text Φªüσñìσê╢τÜäµûçµ£¼
+ * @returns µÿ»σÉªσñìσê╢µêÉσèƒ
+ */
+export async function copyToClipboard(text: string): Promise<boolean> {
+  // Θ¬îΦ»üΦ╛ôσàÑ
+  if (typeof text !== "string" || !text.trim()) {
+    console.warn("σñìσê╢σåàσ«╣µùáµòê");
+    return false;
+  }
+
+  try {
+    // Σ╝ÿσàêσ░¥Φ»òτÄ░Σ╗ú API
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+
+    // ΘÖìτ║ºσê░Σ╝áτ╗ƒµû╣µ│ò
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.opacity = "0";
+
+    document.body.appendChild(textArea);
+    textArea.select();
+
+    const success = document.execCommand("copy");
+    document.body.removeChild(textArea);
+
+    return success;
+  } catch (error) {
+    console.error("σñìσê╢σñ▒Φ┤Ñ:", error);
+    return false;
+  }
+}
+export const generateUniqueId = () => {
+  return `${uuidv4()}`;
+};
+
+/**
+ * µ╕╕σ«óτÜäσî┐σÉìτö¿µê╖µáçΦ»å∩╝îµîüΣ╣àσîûσê░ localStorage.U_UID∩╝ÜσÉîΣ╕Çµ╡ÅΦºêσÖ¿σºïτ╗êΦ┐öσ¢₧σÉîΣ╕ÇΣ╕¬σÇ╝∩╝î
+ * µ▓íµ£ëµëìµû░σ╗║πÇéτÖ╗σ╜òµÇüΣ╕ïσ»╣σ║öτ£ƒσ«₧τÜä cusId∩╝îµ╕╕σ«óµÇüτö¿σ«âσà£σ║ò∩╝îΣ╝áτ╗Öµ£║σÖ¿Σ║║Θù«τ¡öπÇü
+ * σÅìΘªêτ¡ëµÄÑσÅúτÜä userIdπÇé
+ *
+ * µ│¿µäÅ∩╝Üσ«âΣ╕ìµÿ»πÇîµ»Åµ¼íΦ░âτö¿Θâ╜µû░σ╗║πÇìτÜä uuid∩╝îΣ╕ìΦªüτö¿µ¥ÑτöƒµêÉµ╢êµü» clientId ΓÇöΓÇö
+ * ΘéúΣ╝ÜΦ«⌐µëÇµ£ëµ╢êµü»µï┐σê░σÉîΣ╕ÇΣ╕¬ id∩╝îσ»╝Φç┤σêùΦí¿ key ΘçìσñìπÇüµ╢êµü»µîë clientId µƒÑµë╛µù╢Σ║Æτ¢╕Σ╕▓µö╣πÇé
+ * µ╢êµü» id Φ»╖τö¿ {@link createMessageClientId} µêû {@link createClientUUid}πÇé
+ */
+export function getGuestUserId() {
+  const uid = (localStorage && localStorage.getItem("U_UID")) || "";
+  if (uid) return uid;
+  const result = uuidv4();
+  localStorage.setItem("U_UID", result);
+  return result;
+}
+
+/** µ╢êµü»τ║ºσö»Σ╕Ç id∩╝îµ»Åµ¼íΦ░âτö¿Θâ╜Σ╕ìσÉî */
+export function createMessageClientId() {
+  return uuidv4();
+}
+
+// Σ╕Çµ¼íΘí╡Θ¥óΣ╝ÜΦ»¥σö»Σ╕Ç ID
+export function createSessionId() {
+  if (typeof sessionStorage === "undefined") {
+    return "";
+  }
+  const uid = (sessionStorage && sessionStorage.getItem("SESSION_ID")) || "";
+  if (uid) return uid;
+  const result = uuidv4();
+  sessionStorage.setItem("SESSION_ID", result);
+  return result;
+}
+

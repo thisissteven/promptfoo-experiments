@@ -1,0 +1,235 @@
+﻿
+### webpack://_N_E/./app/utils/interactionCardSse.ts
+import { tryParse } from "@/app/utils/object";
+
+/** SSE event σÉì∩╝êµ£ìσèíτ½»Σ╕ïσÅæΣ║ñΣ║Æσìíτëçµù╢Σ╜┐τö¿∩╝ë∩╝îΣ╕Äµ╢êµü»ΦÉ╜σ║ô type Σ╕ÇΦç┤ */
+export const INTERACTION_CARD_SSE_EVENT = "interaction_card";
+
+/** µÄÆΘÜ£ΘÇëΘí╣τ╗¡Φüè / τ¢┤µÄÑτöƒµêÉτ¡öµíêµù╢ /sse/chat µÉ║σ╕ªτÜä chatType */
+export const INTERACTION_CARD_CHAT_TYPE = "interactionCardSubmitted";
+
+/** πÇîτ¢┤µÄÑτöƒµêÉτ¡öµíêπÇìµîëΘÆ«σ¢║σ«Ü Query µûçµíê∩╝êσÄƒµá╖Σ╜£Σ╕║ input σÅæτ╗Ö HA∩╝îΣ╕ìσÅ»µ£¼σ£░σîû∩╝ë */
+export const DIRECT_ANSWER_QUERY = "τ¢┤µÄÑτöƒµêÉτ¡öµíê";
+
+/** τÄ░Φ▒íΘÇëµï⌐σìí∩╝Üµö╢µò¢µòàΘÜ£σ£║µÖ» */
+export const CARD_TYPE_PHENOMENON = "phenomenon_choice";
+/** Φºúσå│µû╣µíêσìí∩╝Üτ╗Öσç║Φºúσå│µ¡ÑΘ¬ñ + τí«Φ«ñτ╗ôµ₧£ */
+export const CARD_TYPE_SOLUTION = "solution";
+
+export function isInteractionCardSseEvent(event?: string): boolean {
+  return event === INTERACTION_CARD_SSE_EVENT;
+}
+
+/** σìíτëçσåàσìòΣ╕¬ΘÇëΘí╣ */
+export interface InteractionCardOption {
+  label: string;
+  /** σ¢╛µûçΘÇëΘí╣τ╝⌐τòÑσ¢╛∩╝¢µ£ëσÇ╝µù╢Σ╗Ñσ¢╛µûçΘÇëΘí╣σìíµ╕▓µƒô */
+  image?: string;
+}
+
+/** interaction_card_info σåàσ▒éτ╗ôµ₧ä∩╝êΣ╕Ä HA σìÅΦ««σÉîµ₧ä∩╝ë */
+export interface InteractionCardInfo {
+  cardType?: string;
+  /** σ╝òσ»╝µ«╡∩╝îΣ╗àτ¼¼Σ╕Çσ╝áσìíΘÇÜσ╕╕µ£ë∩╝îτö▒ HA σå│σ«Ü∩╝¢µ£ëσÇ╝σ▒òτñ║πÇîσà│Σ║ÄπÇöXXπÇòτÜäµÄÆµƒÑΓÇªπÇì */
+  guidance?: string;
+  scenarioTitle?: string;
+  scenarioDescription?: string;
+  scenarioImages: string[];
+  /** Φ¡ªσæèµûçµíê∩╝îµ£ëσÇ╝µù╢Θ╗äΦë▓σ║òΦë▓Φ¡ªσæèµ¥í */
+  warning?: string;
+  optionsDescription?: string;
+  options: InteractionCardOption[];
+}
+
+export interface InteractionCardPayload {
+  /** σìíτëçτ¿│σ«Ü id∩╝îτö¿Σ║ÄΦÉ╜σ║ô/σÄ╗Θçì∩╝îτ╗¡Φüèµù╢Σ╜£Σ╕║ interactionCardClientId σ¢₧Σ╝á */
+  clientId?: string;
+  cardType?: string;
+  info: InteractionCardInfo;
+  /** σÄåσÅ▓σ¢₧τ£ï∩╝Üσ╖▓ΦÉ╜σ║ôσìíτëçτÜäΘÇëΣ╕¡Θí╣ label∩╝êσÉÄτ½» best-effort σåÖσàÑ extension∩╝ë */
+  selectedLabel?: string;
+  /** σÄåσÅ▓σ¢₧τ£ï∩╝Üσ╖▓ΦÉ╜σ║ôσìíτëçτÜäΘÇëΣ╕¡Θí╣Σ╕ïµáç */
+  selectedIndex?: number;
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is string => typeof v === "string" && !!v.trim());
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function readIndex(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const n = Number(value);
+    if (Number.isInteger(n) && n >= 0) return n;
+  }
+  return undefined;
+}
+
+/** σÑæτ║ªσ¡ùµ«╡Σ╕║ image∩╝¢σà╝σ«╣ images µò░τ╗äσÅûΘªûσ╝á */
+function resolveOptionImage(
+  record: Record<string, unknown>,
+): string | undefined {
+  const single = readString(record.image);
+  if (single) return single.trim();
+  return toStringArray(record.images)[0];
+}
+
+function parseOptions(value: unknown): InteractionCardOption[] {
+  if (!Array.isArray(value)) return [];
+  return value.reduce<InteractionCardOption[]>((acc, item) => {
+    if (item && typeof item === "object" && !Array.isArray(item)) {
+      const record = item as Record<string, unknown>;
+      const label = typeof record.label === "string" ? record.label.trim() : "";
+      if (label) {
+        const image = resolveOptionImage(record);
+        acc.push({ label, ...(image ? { image } : {}) });
+      }
+    } else if (typeof item === "string" && item.trim()) {
+      acc.push({ label: item.trim() });
+    }
+    return acc;
+  }, []);
+}
+
+function parseInfo(value: unknown): InteractionCardInfo {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { scenarioImages: [], options: [] };
+  }
+  const record = value as Record<string, unknown>;
+  return {
+    cardType: readString(record.card_type),
+    guidance: readString(record.guidance),
+    scenarioTitle: readString(record.scenario_title),
+    scenarioDescription: readString(record.scenario_description),
+    scenarioImages: toStringArray(record.scenario_images),
+    warning: readString(record.warning),
+    optionsDescription: readString(record.options_description),
+    options: parseOptions(record.options),
+  };
+}
+
+/** extension µÿ»σÉªµë┐Φ╜╜σìíτëçµò░µì«∩╝êσÉ½ interaction_card_info µêûµá╕σ┐âσìíτëçσ¡ùµ«╡∩╝ë */
+function isCardHost(record: Record<string, unknown>): boolean {
+  return (
+    record.interaction_card_info !== undefined ||
+    record.scenario_title !== undefined ||
+    record.scenario_description !== undefined ||
+    record.options !== undefined
+  );
+}
+
+/**
+ * Φºúσ╝ÇΣ┐íσ░üΣ╕èτÜä extension σ¡ùµ«╡∩╝ÜσÅ»Φâ╜µÿ» JSON σ¡ùτ¼ªΣ╕▓µêûσ╖▓Φºúµ₧Éσ»╣Φ▒íπÇé
+ * Σ╗àσ╜ôσà╢µë┐Φ╜╜σìíτëçµò░µì«µù╢µëìΦ┐öσ¢₧∩╝îσÉªσêÖσ¢₧ΘÇÇσñûσ▒éπÇé
+ */
+function unwrapExtension(value: unknown): Record<string, unknown> | null {
+  let obj: unknown = value;
+  if (typeof value === "string") {
+    if (!value.trim()) return null;
+    obj = tryParse(value.trim());
+  }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+    return null;
+  }
+  const record = obj as Record<string, unknown>;
+  return isCardHost(record) ? record : null;
+}
+
+/**
+ * Φºúµ₧É interaction_card SSE data / σÄåσÅ▓µ╢êµü» extensionπÇé
+ * σà╝σ«╣Σ╕ëτºìτ╗ôµ₧ä∩╝Ü
+ * 1) σåàσ▒é interaction_card_info τ¢┤µÄÑΣ╕ïσÅæ∩╝Ü`{ interaction_card_info: {...} }`
+ * 2) σåàσ▒éσìíτëçσ¡ùµ«╡σ╣│Θô║∩╝Ü`{ scenario_title, options, ... }`
+ * 3) ΦÉ╜σ║ô / σÄåσÅ▓ / SSE µò┤σîàΣ┐íσ░ü∩╝Ü`{ type, clientId, card_type,
+ *    extension: "<stringified card json>", ... }`∩╝îσìíτëçµò░µì«σ£¿σ¡ùτ¼ªΣ╕▓σîûτÜä extension σåà
+ */
+export function parseInteractionCardPayload(
+  raw?: string | null,
+): InteractionCardPayload | null {
+  if (raw == null || typeof raw !== "string" || !raw.trim()) {
+    return null;
+  }
+  if (raw === "[DONE]") {
+    return null;
+  }
+  const parsed = tryParse(raw.trim());
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  const outer = parsed as Record<string, unknown>;
+  // µë┐Φ╜╜σìíτëçµò░µì«τÜäσ»╣Φ▒í∩╝ÜΣ╝ÿσàêΣ┐íσ░üσåà extension∩╝îσà╢µ¼íσñûσ▒éµ£¼Φ║½
+  const cardHost = unwrapExtension(outer.extension) ?? outer;
+
+  const rawInfo =
+    cardHost.interaction_card_info !== undefined
+      ? cardHost.interaction_card_info
+      : cardHost;
+  const info = parseInfo(rawInfo);
+
+  // clientId / card_type / ΘÇëΣ╕¡µÇüΣ╝ÿσàêσÅûσñûσ▒éΣ┐íσ░ü∩╝îσ¢₧ΘÇÇσìíτëçµë┐Φ╜╜σ»╣Φ▒í
+  return {
+    clientId: readString(outer.clientId) ?? readString(cardHost.clientId),
+    cardType:
+      info.cardType ??
+      readString(outer.card_type) ??
+      readString(cardHost.card_type),
+    info,
+    selectedLabel:
+      readString(outer.selectedLabel) ?? readString(cardHost.selectedLabel),
+    selectedIndex:
+      readIndex(outer.selectedIndex) ?? readIndex(cardHost.selectedIndex),
+  };
+}
+
+/** µÿ»σÉªΣ╕║σÅ»µ╕▓µƒôτÜäΣ║ñΣ║Æσìíτëç∩╝êΦç│σ░æΦªüµ£ëµáçΘóÿ / µÅÅΦ┐░ / ΘÇëΘí╣∩╝ë */
+export function isRenderableInteractionCardPayload(
+  payload: InteractionCardPayload | null,
+): payload is InteractionCardPayload {
+  if (!payload) return false;
+  const { info } = payload;
+  return (
+    !!info.scenarioTitle ||
+    !!info.scenarioDescription ||
+    !!info.guidance ||
+    info.options.length > 0
+  );
+}
+
+/** Φºúµ₧É interaction_card SSE data µÿ»σÉªσÅ»µ╕▓µƒô */
+export function isInteractionCardSseData(data: string): boolean {
+  return isRenderableInteractionCardPayload(parseInteractionCardPayload(data));
+}
+
+/**
+ * Θ╗ÿΦ«ñσ╕º∩╝êµùá event σÉì∩╝ëσà£σ║òΦ»åσê½∩╝ÜσÉÄτ½»σÅ»Φâ╜Σ╗Ñµò┤σîàΣ┐íσ░ü∩╝êσÉ½ `type=interaction_card`∩╝ë
+ * Σ╜£Σ╕║Θ╗ÿΦ«ñ data Σ╕ïσÅæΦÇîΘ¥₧σæ╜σÉìΣ║ïΣ╗╢πÇéΣ╗àσ╜ô `type` σæ╜Σ╕¡Σ╕öσìíτëçσÅ»µ╕▓µƒôµù╢µëìΦ«ñσ«Ü∩╝î
+ * Θü┐σàìΦ»»σÉ₧µÖ«ΘÇÜµûçµ£¼ / [DONE] / delta σ╕ºπÇé
+ */
+export function isInteractionCardEnvelopeData(data: string): boolean {
+  if (!data || data === "[DONE]") return false;
+  const parsed = tryParse(data.trim());
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return false;
+  }
+  const record = parsed as Record<string, unknown>;
+  if (record.type !== INTERACTION_CARD_SSE_EVENT) return false;
+  return isRenderableInteractionCardPayload(parseInteractionCardPayload(data));
+}
+
+/** σ£¿ΘÇëΘí╣Σ╕¡µîë label σî╣ΘàìΣ╕ïµáç∩╝êσÉÄτ½»µ£Çτ╗êΣ╗Ñ input=label σî╣ΘàìΣ╕║σçå∩╝îµ¡ñσñäΣ╗àσëìτ½»µÅÉτñ║σÇ╝∩╝ë */
+export function findOptionIndexByLabel(
+  options: InteractionCardOption[],
+  label: string,
+): number | undefined {
+  const target = label.trim();
+  const idx = options.findIndex((o) => o.label.trim() === target);
+  return idx === -1 ? undefined : idx;
+}
+

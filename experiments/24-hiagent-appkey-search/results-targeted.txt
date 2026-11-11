@@ -1,0 +1,5 @@
+﻿webpack://_N_E/./app/api/auth.ts:38: bbl_token: `Bearer ${accessToken}`,
+webpack://_N_E/./app/utils/handyBridge.ts:159: Authorization: `Bearer ${accessToken}`,
+webpack://_N_E/./app/utils/handyBridge.ts:180: Authorization: "Bearer " + accessToken,
+webpack://_N_E/./app/utils/handyBridge.ts:198: Authorization: `Bearer ${accessToken}`,
+webpack://_N_E/./app/api/mallCard.ts:56: headers: bblToken ? { bbl_token: `Bearer ${bblToken}` } : undefined,

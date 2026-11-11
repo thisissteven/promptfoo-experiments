@@ -1,0 +1,3153 @@
+﻿
+===== webpack://_N_E/./app/components/chat/Quoted.tsx =====
+
+import { Message, MessageSender, MessageType } from "@/app/store/types";
+import { tryParse } from "@/app/utils/object";
+import React, { useCallback, useMemo } from "react";
+import styles from "./Quoted.module.scss";
+import SvgClose from "@/app/icons/close.svg";
+import { Popover, Image } from "antd";
+import { useTranslations } from "@/app/locales";
+import { isForbiddenMsg } from "@/app/store/formatMessage";
+
+export enum QuotedFrom {
+  ChatInput = "chatInput",
+  Msg = "msg",
+}
+export default function Quoted({
+  quotedMsg,
+  onClose,
+  from,
+  handleClick,
+  isMobile,
+  msgSender,
+}: {
+  quotedMsg: Message;
+  onClose?: () => void;
+  from: QuotedFrom;
+  handleClick?: (quotedMsg: Message) => void;
+  isMobile?: boolean;
+  msgSender?: MessageSender;
+}) {
+  const t = useTranslations();
+  // 1. σ«îσà¿τº╗ΘÖñτè╢µÇüσÆî useEffect∩╝îµö╣τö¿ useMemo Φ«íτ«ùσÇ╝
+  const content = useMemo(
+    () => tryParse(quotedMsg?.content),
+    [quotedMsg?.content],
+  );
+
+  const { msgContent, quoteRedrawn } = useMemo(() => {
+    if (!quotedMsg || !content) return { msgContent: "", quoteRedrawn: false };
+
+    let contentText = "";
+    let isRedrawn = false;
+
+    if (content.fileName) {
+      if (content.fileType === MessageType.Video) {
+        contentText = `[${t.chat.video}]: ${content.fileName}`;
+      } else if (content.fileType === MessageType.Image) {
+        contentText = `[${t.chat.image}]: ${content.fileName}`;
+      } else {
+        contentText = `[${t.chat.file}]: ${content.fileName}`;
+      }
+    } else if (typeof content.text === "string") {
+      if (quotedMsg.hasRedrawn) {
+        isRedrawn = true;
+        contentText = t.chat.quotedHaveRedrawMsg;
+      } else {
+        contentText = `${content.text}`;
+      }
+    }
+
+    return { msgContent: contentText, quoteRedrawn: isRedrawn };
+  }, [quotedMsg, content]);
+
+  // 2. τí«Σ┐¥µëÇµ£ëΣ╛¥Φ╡ûΘí╣σ«îµò┤
+  const quotedPreview = useMemo(() => {
+    if (quotedMsg && isForbiddenMsg(quotedMsg)) {
+      return (
+        <div
+          className={styles.quotedPreview}
+          dangerouslySetInnerHTML={{ __html: t.riskMsg.content }}
+        />
+      );
+    }
+    if (from === QuotedFrom.ChatInput || !content) return null;
+
+    if (content.fileType === MessageType.Video) {
+      return (
+        <video src={content.fileUrl} width={isMobile ? 200 : 400} controls />
+      );
+    }
+    if (content.fileType === MessageType.Image) {
+      return (
+        <Image
+          height={200}
+          src={content.fileUrl}
+          alt={content.fileName}
+          preview={{ mask: t.chat.preview }}
+        />
+      );
+    }
+    if (content.fileName) {
+      return <span className={styles.fileContainer}>{content.fileName}</span>;
+    }
+    if (!content.text) return null;
+
+    return (
+      <div
+        className={styles.quotedPreview}
+        dangerouslySetInnerHTML={{ __html: content.text }}
+      />
+    );
+  }, [content, isMobile, from]); // µ╖╗σèá from Σ╛¥Φ╡û
+
+  // 3. σ«ëσà¿σñäτÉå getPopupContainer
+  const getPopupContainer = useCallback(() => {
+    const container = document.querySelector('[class^="Chat_chatMessages__"]');
+    return container ? (container as HTMLElement) : document.body;
+  }, []);
+
+  // 4. Σ╜┐τö¿ useCallback Σ╝ÿσîûτé╣σç╗σñäτÉå
+  const handleCloseClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      onClose?.();
+    },
+    [onClose],
+  );
+
+  const handleContainerClick = useCallback(() => {
+    handleClick?.(quotedMsg);
+  }, [handleClick, quotedMsg]);
+
+  if (!quotedMsg) return null;
+
+  return (
+    <div
+      className={`${styles.chatInputQuoted} quoteMsgContainer ${styles[from]} ${styles[isMobile ? "mobile" : "pc"]}`}
+    >
+      <Popover
+        trigger="hover"
+        content={quotedPreview}
+        getPopupContainer={getPopupContainer}
+        placement={msgSender === MessageSender.USER ? "left" : "right"}
+        // µ╖╗σèá key σ╝║σê╢Θçìµû░σê¢σ╗║ Popover σ╜ôσåàσ«╣σÅÿσîû
+        key={`popover-${quotedMsg.id}`}
+      >
+        <div className={styles.container} onClick={handleContainerClick}>
+          {typeof onClose === "function" && (
+            <SvgClose className={styles.closeIcon} onClick={handleCloseClick} />
+          )}
+          <span className={styles.divider}></span>
+          {!quoteRedrawn && (
+            <span className={styles.reply}>{t.chat.reply}: </span>
+          )}
+          {isForbiddenMsg(quotedMsg) ? (
+            <span className={styles.mainContent}>{t.riskMsg.content}</span>
+          ) : (
+            <span className={styles.mainContent}>{msgContent}</span>
+          )}
+        </div>
+      </Popover>
+    </div>
+  );
+}
+
+
+===== webpack://_N_E/./app/components/chat/modules/Satisfy.tsx =====
+
+"use client";
+import React, { useEffect, useState } from "react";
+import styles from "./Satisfy.module.scss";
+import SvgStart from "@/app/icons/SvgStar.svg";
+import { Message, MessageType } from "@/app/store/types";
+import AppButton from "@/app/ui/button";
+import { addRecord } from "@/app/api/message";
+import { ScrollAction, ScrollFrom } from "@/app/hooks/useReadScrollToBottom";
+import { useTranslations } from "@/app/locales";
+import { webSocketService } from "@/app/services/WebSocketService";
+import { tryParse } from "@/app/utils/object";
+import { isOverseaEnv } from "@/app/utils/env";
+
+interface IProps {
+  msg: Message;
+  isResult?: boolean;
+}
+export default function Satisfy(props: IProps) {
+  const t = useTranslations();
+  const [isResolved, setIsResolved] = useState<boolean | null>(null);
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [commended, setCommended] = useState<boolean>(false);
+  const handleSubmit = async () => {
+    try {
+      setLoading(true);
+      const conversationId = props.msg.conversationId;
+      if (conversationId) {
+        await addRecord({
+          content: comment,
+          conversationId: conversationId,
+          resolved: isResolved as boolean,
+          satisfaction: rating,
+        });
+        // µ╗íµäÅσ║ªµ╢êµü»µ¥Ñµ║ÉσÅ»Φâ╜µÿ»σ¥Éσ╕¡Σ╕╗σè¿µÄ¿ΘÇü∩╝îµêûΦÇàτö¿µê╖σÅæΘÇü
+        webSocketService.sendMessage(
+          `{"text":"${t.systemMsg.satisfyComment}"}`,
+          {
+            msgType: MessageType.Template,
+            noNeedSendToWebsocket: true,
+          },
+        );
+        setCommended(true);
+      }
+    } catch {}
+
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    if (!props.msg.disabled) {
+      // µû░Φ┐¢µ¥ÑτÜäµ╗íµäÅσ║ªµëìµ╗Üσè¿σê░σ║òΘâ¿∩╝îσÄåσÅ▓µ╢êµü»Σ╕ìµ╗Üσè¿σê░σ║òΘâ¿
+      props.msg.handleScrollToBottom?.(
+        ScrollAction.FORCE_TO_BOTTOM,
+        ScrollFrom.SATISFY,
+      );
+    }
+    if (props.msg.disabled) {
+      const parseData = tryParse(props.msg.content);
+      if (parseData) {
+        setIsResolved(parseData.isSolve);
+        setRating(parseData.score);
+        setComment(parseData.evaluate);
+        setCommended(true);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const MAX_LENGTH = 500;
+  return (
+    <div
+      className={`${styles.feedbackContainer} ${commended ? styles.commended : ""}`}
+    >
+      <h2 className={styles.title}>{t.chat.questionSolved}</h2>
+      <div className={styles.resolutionOptions}>
+        <button
+          autoFocus={false}
+          className={`${styles.resolved} ${styles.resolutionBtn} ${isResolved === true ? styles.resolutionActive : ""}`}
+          onClick={() => setIsResolved(true)}
+          disabled={commended}
+        >
+          {t.chat.solved}
+        </button>
+        <button
+          autoFocus={false}
+          className={`${styles.unResolved} ${styles.resolutionBtn} ${isResolved === false ? styles.resolutionActive : ""}`}
+          onClick={() => setIsResolved(false)}
+          disabled={commended}
+        >
+          {t.chat.unSolved}
+        </button>
+      </div>
+
+      <div className={styles.ratingSection}>
+        <p className={styles.ratingTitle}>{t.chat.satisfyTitle}</p>
+
+        <div className={styles.starRating}>
+          {[...Array(5)].map((_, index) => (
+            <button
+              key={index}
+              type="button"
+              className={`${styles.star} ${index < rating ? styles.starActive : ""}`}
+              onClick={() => setRating(index + 1)}
+              aria-label={`${index + 1} level`}
+              disabled={commended}
+            >
+              <SvgStart />
+            </button>
+          ))}
+        </div>
+
+        <textarea
+          className={styles.commentBox}
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          placeholder={t.chat.satisfyPlaceholder}
+          rows={3}
+          maxLength={MAX_LENGTH}
+          disabled={commended}
+        />
+      </div>
+      <AppButton
+        type="primary"
+        onClick={() => handleSubmit()}
+        className={styles.submitBtn}
+        disabled={isResolved === null || rating === 0 || commended}
+        loading={loading}
+      >
+        {t.button.submit}
+      </AppButton>
+      {isOverseaEnv() && (
+        <p
+          className={styles.tips}
+          dangerouslySetInnerHTML={{ __html: t.chat.satisfyTips }}
+        ></p>
+      )}
+    </div>
+  );
+}
+
+
+===== webpack://_N_E/./app/components/chat/modules/Text.tsx =====
+
+import { Message, RiskStatus } from "@/app/store/types";
+import DangerouslySetInnerHTML from "@/app/ui/dangerouslySetInnerHTML";
+import { parseMessageContent } from "@/app/utils/object";
+import { validIsALink } from "@/app/utils/url";
+import { useTranslations } from "@/app/locales";
+import React, { useMemo } from "react";
+
+export default React.memo(
+  function Text(props: { msg: Message }) {
+    const t = useTranslations();
+    // 1. σàêΦ░âτö¿µëÇµ£ë Hook∩╝êparseMessageContent σà╝σ«╣µ£ìσèíτ½»Φ┐öσ¢₧ ""text"" τ¡ëτò╕σ╜ó JSON∩╝ë
+    const content = useMemo(() => {
+      return parseMessageContent(props.msg.content);
+    }, [props.msg.content]);
+
+    const contentText = useMemo(() => {
+      const text = content?.text || "";
+      return validIsALink(text);
+    }, [content]);
+
+    if (props.msg.riskStatus === RiskStatus.Failed) {
+      return <div>{t.riskMsg.forbidden}</div>;
+    }
+
+    // 2. σåìΦ┐¢Φíîµ¥íΣ╗╢σêñµû¡
+    if (!content) {
+      return null;
+    }
+
+    // 3. µ£ÇσÉÄΦ┐öσ¢₧ JSX
+    return <DangerouslySetInnerHTML msgContent={contentText} />;
+  }, // Φç¬σ«ÜΣ╣ë props µ»öΦ╛âσç╜µò░
+  (prevProps, nextProps) => {
+    // Σ╗àσ╜ô msg.content σÅæτöƒσÅÿσîûµù╢µëìΘçìµû░µ╕▓µƒô
+    return prevProps.msg.content === nextProps.msg.content;
+  },
+);
+
+
+===== webpack://_N_E/./app/components/chat/modules/RichText.tsx =====
+
+import { Message } from "@/app/store/types";
+import React from "react";
+
+// µÿ»σÉªσîàσÉ½ HTML µáçτ¡╛∩╝Üτ║»µûçµ£¼σåàσ«╣(µùáµáçτ¡╛)ΘçîτÜä \n Θ£ÇΦªüΘ¥á white-space Σ┐¥τòÖµìóΦíî∩╝¢
+// σÉ½ HTML τÜäσåàσ«╣(σªéσ¥Éσ╕¡σ»îµûçµ£¼πÇü<br/> τ¡ë)Σ║ñτ╗Öµ╡ÅΦºêσÖ¿µîë HTML µ╕▓µƒô∩╝îΘü┐σàìµáçτ¡╛Θù┤µìóΦíîΦó½σ╜ôµêÉτ⌐║ΦíîπÇé
+const containsHTMLTags = (text: string): boolean =>
+  /<[a-z][\s\S]*>/i.test(text);
+
+/**
+ * RichText τ╗äΣ╗╢
+ * τö¿Σ║Äµ╕▓µƒôσ»îµûçµ£¼µ╢êµü»σåàσ«╣
+ * µö»µîü HTMLπÇüMarkdown τ¡ëµá╝σ╝Å
+ */
+export default React.memo(
+  function RichText(props: { msg: Message }) {
+    const content = props.msg.content || "";
+    // τ║»µûçµ£¼∩╝Üτö¿ pre-wrap Σ┐¥τòÖ \n µìóΦíî∩╝¢σ»îµûçµ£¼(σÉ½µáçτ¡╛)∩╝ÜΣ┐¥µîüσÄƒµá╖τö▒ HTML µ╕▓µƒô
+    return (
+      <div
+        style={
+          containsHTMLTags(content) ? undefined : { whiteSpace: "pre-wrap" }
+        }
+        dangerouslySetInnerHTML={{ __html: content }}
+      ></div>
+    );
+  },
+  // Φç¬σ«ÜΣ╣ë props µ»öΦ╛âσç╜µò░∩╝îΣ╝ÿσîûµÇºΦâ╜
+  (prevProps, nextProps) => {
+    // Σ╗àσ╜ô msg.content σÅæτöƒσÅÿσîûµù╢µëìΘçìµû░µ╕▓µƒô
+    return prevProps.msg.content === nextProps.msg.content;
+  },
+);
+
+
+===== webpack://_N_E/./app/components/chat/modules/LineUp.tsx =====
+
+import React, { useEffect } from "react";
+import styles from "./LineUp.module.scss";
+import {
+  CurrentChatStatus,
+  Message,
+  MessageSender,
+  MessageType,
+} from "@/app/store/types";
+import { tryParse } from "@/app/utils/object";
+import AppButton from "@/app/ui/button";
+import { webSocketService } from "@/app/services/WebSocketService";
+import { isMobileDevice } from "@/app/utils/device";
+import { useMessageStore } from "@/app/store";
+import { cancelQueue } from "@/app/api/message";
+import { ScrollAction, ScrollFrom } from "@/app/hooks/useReadScrollToBottom";
+import { useTranslations } from "@/app/locales";
+import { ReportScene, reportScene } from "@/app/services/DataReporter";
+interface IProps {
+  msg: Message;
+}
+export default function LineUp(props: IProps) {
+  const t = useTranslations();
+  const content = props.msg?.content as string;
+  const chatStatus = useMessageStore((state) => state.chatStatus);
+
+  useEffect(() => {
+    props.msg.handleScrollToBottom?.(
+      ScrollAction.FORCE_TO_BOTTOM,
+      ScrollFrom.LINE_UP,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!content || chatStatus !== CurrentChatStatus.LineUp) {
+    return;
+  }
+
+  const getLineInfo = () => {
+    let { text } = tryParse(content) || {};
+    text = text.replace(/\d+/g, (num: number) => {
+      return `<span style="color:#00ae42; font-weight: bold; margin: 0 4px">${num}</span>`;
+    });
+    return text;
+  };
+
+  const handleCancelLineUp = async () => {
+    reportScene(ReportScene.CANCEL_LINE_UP);
+    await cancelQueue();
+    webSocketService.sendMessage(
+      JSON.stringify({ text: t.chat.canceledLineUp }),
+      {
+        noNeedSendToWebsocket: true,
+        senderType: MessageSender.USER,
+        msgType: MessageType.Template,
+      },
+    );
+  };
+
+  return (
+    <div
+      className={`${styles.lineUp} ${isMobileDevice() ? styles.mobile : ""}`}
+    >
+      <p
+        className={styles.title}
+        dangerouslySetInnerHTML={{ __html: getLineInfo() }}
+      ></p>
+      <AppButton
+        type="primary"
+        onClick={handleCancelLineUp}
+        theme="borderless"
+        className={styles.cancel}
+        extraclassname="extra"
+      >
+        {t.chat.cancelLineUp}
+      </AppButton>
+    </div>
+  );
+}
+
+
+===== webpack://_N_E/./app/components/chat/modules/File.tsx =====
+
+import { Message } from "@/app/store/types";
+import React from "react";
+import styles from "./File.module.scss";
+import { parseFileData } from "@/app/utils/file";
+import SvgFile from "@/app/icons/SvgFile.svg";
+import { getHandyAppVersion, isHandyApp } from "@/app/utils/device";
+import { copyToClipboard } from "@/app/utils/string";
+import { useTranslations } from "@/app/locales";
+import { message } from "antd";
+import { openBrowser } from "@/app/utils/handyBridge";
+import { isValidUrl } from "@/app/utils/url";
+
+export default function File({ msg }: { msg: Message }) {
+  const t = useTranslations();
+  const content = msg.content as string;
+  const openFile = async () => {
+    const fileUrl = parseFileData(content)?.fileUrl;
+    if (!isValidUrl(fileUrl)) {
+      return;
+    }
+    if (isHandyApp()) {
+      const handyVersion = getHandyAppVersion();
+      if (
+        handyVersion &&
+        !!Number(handyVersion) &&
+        Number(handyVersion) >= 5140 &&
+        window.wx &&
+        typeof window.wx.postMessage === "function"
+      ) {
+        openBrowser(fileUrl);
+        return;
+      }
+      await copyToClipboard(fileUrl);
+      message.success(t.tips.copyFileSuccess);
+      return;
+    }
+    window.open(parseFileData(content)?.fileUrl);
+  };
+  return (
+    <div
+      onClick={openFile}
+      className={`${styles.fileBox} ${msg.id ? styles.success : styles.error}`}
+    >
+      <span>{parseFileData(content)?.fileName}</span> <SvgFile />
+    </div>
+  );
+}
+
+
+===== webpack://_N_E/./app/components/chat/modules/MallContextCard.tsx =====
+
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { message } from "antd";
+import { useTranslations } from "@/app/locales";
+import { fetchMallContextJumpUrl } from "@/app/api/mallCard";
+import { useMessageStore } from "@/app/store";
+import {
+  MallContextCard as MallContextCardData,
+  Message,
+} from "@/app/store/types";
+import {
+  getMallCardJumpContext,
+  getMaskedOrderNo,
+  getProductFallbackText,
+  parseMallContextCard,
+} from "@/app/utils/mallContextCard";
+import { formatTimestamp } from "@/app/utils/date";
+import { getHandyAppVersion, isHandyApp } from "@/app/utils/device";
+import { openBrowser } from "@/app/utils/handyBridge";
+import { isValidUrl } from "@/app/utils/url";
+import styles from "./MallContextCard.module.scss";
+
+interface MallContextCardProps {
+  payload?: unknown;
+  msg?: Message;
+  timestamp?: number;
+}
+
+export default function MallContextCard({
+  payload,
+  msg,
+  timestamp,
+}: MallContextCardProps) {
+  const t = useTranslations();
+  const source = payload ?? msg?.content;
+  const card = useMemo(() => parseMallContextCard(source), [source]);
+  const imageUrl =
+    card?.cardType === "product"
+      ? card.productImage
+      : card?.products[0]?.productImage;
+  const [showImage, setShowImage] = useState(!!imageUrl);
+  const [jumping, setJumping] = useState(false);
+  const jumpingRef = useRef(false);
+
+  useEffect(() => {
+    setShowImage(!!imageUrl);
+  }, [imageUrl]);
+
+  if (!card) return null;
+
+  const viewModel = buildViewModel(card, t.mallContextCard);
+  const timeText = formatTimestamp(msg?.timestamp ?? timestamp ?? 0);
+
+  const handleJump = async () => {
+    if (jumpingRef.current) return;
+    const context = getMallCardJumpContext(card);
+    if (!context) {
+      message.error(t.mallContextCard.jumpFailed);
+      return;
+    }
+    console.log("context------>", context);
+    jumpingRef.current = true;
+    setJumping(true);
+    try {
+      const cachedUrl = msg?.jumpUrl;
+      const jumpUrl =
+        cachedUrl && isValidUrl(cachedUrl)
+          ? cachedUrl
+          : await fetchMallContextJumpUrl(context);
+      if (!cachedUrl) {
+        useMessageStore
+          .getState()
+          .patchMessage({ id: msg?.id, clientId: msg?.clientId }, { jumpUrl });
+      }
+      openMallJumpUrl(jumpUrl);
+    } catch (error) {
+      console.error("[MallCard] jump url failed:", error);
+      message.error(t.mallContextCard.jumpFailed);
+    } finally {
+      jumpingRef.current = false;
+      setJumping(false);
+    }
+  };
+
+  return (
+    <div className={styles.wrap}>
+      {timeText && <div className={styles.time}>{timeText}</div>}
+      <div
+        className={styles.card}
+        data-card-type={card.cardType}
+        role="button"
+        tabIndex={0}
+        aria-busy={jumping}
+        onClick={handleJump}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            void handleJump();
+          }
+        }}
+      >
+        <div className={styles.thumbnail}>
+          {showImage && imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={imageUrl}
+              alt={viewModel.productName}
+              onError={() => setShowImage(false)}
+            />
+          ) : (
+            <span>{viewModel.fallbackText}</span>
+          )}
+        </div>
+        <div className={styles.content}>
+          <div className={styles.title}>{viewModel.title}</div>
+          <div className={styles.subtitle}>
+            {viewModel.subtitleParts.map((part, index) => (
+              <span key={`${part}-${index}`}>
+                {index > 0 && <i aria-hidden="true">|</i>}
+                {part}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const openMallJumpUrl = (jumpUrl: string) => {
+  window.open(jumpUrl, "_blank", "noopener,noreferrer");
+};
+
+type MallContextCardTranslations = ReturnType<
+  typeof useTranslations
+>["mallContextCard"];
+
+const buildViewModel = (
+  card: MallContextCardData,
+  translations: MallContextCardTranslations,
+) => {
+  if (card.cardType === "product") {
+    return {
+      productName: card.productName,
+      fallbackText: getProductFallbackText(card),
+      title: `${translations.consultingPrefix}${card.productName}`,
+      subtitleParts: [
+        translations.productConsultation,
+        ...(card.skuName ? [card.skuName] : []),
+      ],
+    };
+  }
+
+  const product = card.products[0];
+  const status =
+    card.orderStatusText ||
+    translations.orderStatus[
+      card.orderStatus as keyof typeof translations.orderStatus
+    ];
+  const productSummary = product
+    ? `${product.productName}${product.quantity ? ` x${product.quantity}` : ""}`
+    : "";
+
+  return {
+    productName: product?.productName || translations.orderConsultation,
+    fallbackText: translations.orderPlaceholder,
+    title: `${translations.consultingPrefix}${translations.orderPrefix}${getMaskedOrderNo(card)}`,
+    subtitleParts: [
+      translations.orderConsultation,
+      ...(status ? [status] : []),
+      ...(productSummary ? [productSummary] : []),
+    ],
+  };
+};
+
+
+===== webpack://_N_E/./app/components/robot/components/guideMenu/index.tsx =====
+
+"use client";
+import React, { useMemo, useState, useEffect } from "react";
+import { Collapse, Empty, List } from "antd";
+import { ReloadOutlined } from "@ant-design/icons";
+import SvgRightArrow from "@/app/icons/SvgRightArrow.svg";
+import {
+  GuideMenuItemType,
+  ChatContentType,
+  ComponentTypeEnum,
+} from "@/app/types/typeConfig/chatQuestion";
+import {
+  ReportContentEnum,
+  ReportParentContentEnum,
+  RobotChatPropsType,
+} from "@/app/types/typeConfig/report";
+import {
+  MessageSender,
+  MessageType,
+  HeaderType,
+  RobotMessageType,
+  MessageStatus,
+} from "@/app/store/types";
+import DangerouslySetInnerHTML from "@/app/ui/dangerouslySetInnerHTML";
+import { AIQuestionList } from "@/app/hooks/useClientInit";
+import styles from "./index.module.scss";
+import { handleRobotChat } from "@/app/utils/bizRequest";
+import { useTranslations } from "@/app/locales";
+import { useAuth } from "@/app/lib/AuthProvider";
+import { getGuestUserId, createClientUUid } from "@/app/utils/string";
+import { useMessageStore } from "@/app/store";
+import { forceChatScrollToBottom } from "@/app/hooks/useReadScrollToBottom";
+import { trackMessageSend } from "@/app/services/trackEvents";
+// import { Tabs } from "antd";
+import Image from "next/image";
+import { getPublicImagePath } from "@/app/utils/image";
+import { ScrollableCategoryTabs } from "./ScrollableCategoryTabs";
+interface GuideMenuProps {
+  data?: AIQuestionList;
+  onQuestionClick?: (item: GuideMenuItemType) => void;
+}
+
+const GuideMenu: React.FC<GuideMenuProps> = ({ data }) => {
+  const t = useTranslations();
+  const { isAuthenticated, user } = useAuth();
+  const { setRobotMessage, addOutgoingMessage } = useMessageStore();
+  const ITEMS_PER_PAGE = 5;
+
+  // Σ╕║µ»ÅΣ╕¬σêåτ▒╗τ╗┤µèñσ╜ôσëìΘí╡τáü
+  const [pageIndexMap, setPageIndexMap] = useState<Record<string, number>>({});
+
+  // Φ┐╜Φ╕¬σ╜ôσëìµ┐Çµ┤╗τÜä tab
+  const [activeKey, setActiveKey] = useState<string>("");
+
+  // µúÇµ╡ïµÿ»σÉªΣ╕║τº╗σè¿τ½»
+  const [isMobile, setIsMobile] = useState(false);
+
+  // τº╗σè¿τ½»µèÿσÅáΘ¥óµ¥┐µ┐Çµ┤╗τÜä key
+  const [collapseActiveKey, setCollapseActiveKey] = useState<string[]>([]);
+
+  const categorizedQuestions = useMemo(() => {
+    if (!data?.list || data.list.length === 0) {
+      return [];
+    }
+    return data.list;
+  }, [data]);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
+  // σ╜ôµò░µì«σèáΦ╜╜σÉÄ∩╝îΦ«╛τ╜«Θ╗ÿΦ«ñµ┐Çµ┤╗τ¼¼Σ╕ÇΣ╕¬ tab
+  useEffect(() => {
+    if (categorizedQuestions.length > 0 && !activeKey) {
+      setActiveKey(String(categorizedQuestions[0].id));
+    }
+  }, [categorizedQuestions, activeKey]);
+
+  // ΦÄ╖σÅûσêåΘí╡σÉÄτÜäΘù«ΘóÿσêùΦí¿
+  const getPaginatedItems = (items: GuideMenuItemType) => {
+    const allConfigItems = items.configRelateVOList;
+    if (!Array.isArray(allConfigItems)) {
+      return [];
+    }
+    if (allConfigItems.length === 0) {
+      return [];
+    }
+
+    const currentPage = pageIndexMap[items.id] || 0;
+    const totalPages = Math.ceil(allConfigItems.length / ITEMS_PER_PAGE);
+    const startIndex = (currentPage % totalPages) * ITEMS_PER_PAGE;
+    const endIndex = startIndex + ITEMS_PER_PAGE;
+
+    return allConfigItems.slice(startIndex, endIndex);
+  };
+
+  const getCategoryItemCount = (category: GuideMenuItemType) =>
+    category.configRelateVOList?.length ?? 0;
+
+  const canShowRefresh = (category: GuideMenuItemType) =>
+    getCategoryItemCount(category) > ITEMS_PER_PAGE;
+
+  // σê╖µû░µîëΘÆ«τé╣σç╗σñäτÉå∩╝êPC τö¿ activeKey∩╝¢τº╗σè¿τ½»Σ╝áσàÑσ╜ôσëìσêåτ▒╗ id∩╝ë
+  const handleRefresh = (categoryId?: string) => {
+    const key = categoryId ?? activeKey;
+    if (!key) return;
+
+    const currentCategory = categorizedQuestions.find(
+      (cat) => String(cat.id) === key,
+    );
+
+    if (!currentCategory || !currentCategory.configRelateVOList) return;
+
+    const totalItems = currentCategory.configRelateVOList.length;
+    const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
+
+    // σªéµ₧£σÅ¬µ£ëΣ╕ÇΘí╡µêûµ▓íµ£ëµò░µì«∩╝îΣ╕ìΘ£ÇΦªüσêçµìó
+    if (totalPages <= 1) return;
+
+    // µ¢┤µû░σ╜ôσëìσêåτ▒╗τÜäΘí╡τáü∩╝îσ╛¬τÄ»σêçµìóσê░Σ╕ïΣ╕ÇΘí╡
+    setPageIndexMap((prev) => ({
+      ...prev,
+      [currentCategory.id]: ((prev[currentCategory.id] || 0) + 1) % totalPages,
+    }));
+  };
+
+  if (!data || !data.list || data.list.length === 0) {
+    return (
+      <div className={styles.guideMenuEmpty}>
+        <Empty description="µÜéµùáσ╝òσ»╝Θù«Θóÿ" />
+      </div>
+    );
+  }
+
+  const handleQuestionClick = (
+    item: GuideMenuItemType,
+    question: GuideMenuItemType,
+  ) => {
+    // const parentContentInfo = {
+    //   parentContent: item.title,
+    //   parentContentId: item.id,
+    //   parentContentType: ReportParentContentEnum.GUIDE_MENU,
+    // };
+    switch (item.relateType) {
+      // case ReportContentEnum.TECH_AI:
+      //   dispatch(
+      //     batchAddQuestion([requireCustomerQuestionParams(item.title)]),
+      //   );
+      //   dispatch(triggerTryOpenAI(true));
+      //   break;
+      // case ReportContentEnum.EXTERNAL_LINK:
+      //   openUrl(item.relateContent);
+      //   break;
+      // case ReportContentEnum.CATEGORY:
+      //   queryCategoryDetail({
+      //     categoryId: item.relateId,
+      //     language: lng,
+      //   }).then((res) => {
+      //     dispatch(
+      //       batchAddQuestion([
+      //         requireCustomerQuestionParams(item.title),
+      //         requireRobotQuestionParams(
+      //           res?.questions || [],
+      //           TemplateFlagEnum.SelectQuestion,
+      //           {
+      //             type: ComponentTypeEnum.Robot,
+      //             id: item.id,
+      //             parentContentInfo,
+      //             rootSourceType: item.tagType,
+      //           },
+      //         ),
+      //       ]),
+      //     );
+      //   });
+      //   break;
+      // case ReportContentEnum.TAG:
+      //   if (item?.commonLanguageVO?.externalLink) {
+      //     openUrl(item.commonLanguageVO.externalLink);
+      //   } else {
+      //     handleAnswerQuestion(item, parentContentInfo, 2);
+      //   }
+      //   break;
+      // case ReportContentEnum.FAQ:
+      //   handleAnswerQuestion(item, parentContentInfo, 1);
+      //   break;
+      case ReportContentEnum.HOT_QUESTION:
+        HotQuestionClick(item, question);
+        break;
+    }
+  };
+
+  const HotQuestionClick = (
+    item: GuideMenuItemType,
+    question: GuideMenuItemType,
+  ) => {
+    // τö¿µê╖Σ╕╗σè¿τé╣σç╗σ▒₧Σ║ÄσÅæΘÇüΦíîΣ╕║∩╝îσ╝║σê╢Φ«⌐µû░µ╢êµü»µ╗Üσè¿σê░σ║òΘâ¿
+    forceChatScrollToBottom();
+    const params: RobotChatPropsType = {
+      id: question.relateId,
+      idType: 1,
+      data: {
+        userId: isAuthenticated ? String(user?.cusId) : getGuestUserId(),
+      },
+    };
+    handleRobotChat(
+      params,
+      {
+        customerMessage: question.relateContent,
+        parentContentInfo: {
+          parentContentId: "",
+          parentContent: item.title,
+          parentContentType: ReportParentContentEnum.HOT_QUESTION,
+        },
+      },
+      isAuthenticated,
+      t,
+    ).then((res) => {
+      const chatContent = res as ChatContentType[];
+      chatContent.forEach((contentItem) => {
+        if (contentItem.type === ComponentTypeEnum.Customer) {
+          const clientId = createClientUUid(MessageType.Text);
+          const message = `${contentItem.message}`;
+          addOutgoingMessage({
+            headerType: HeaderType.MESSAGE,
+            clientId,
+            content: `{"text":"${contentItem.message}"}`,
+            senderType: MessageSender.USER,
+            type: MessageType.Text,
+            timestamp: Date.now(),
+            status: MessageStatus.Success,
+          });
+          trackMessageSend(clientId + "|" + message, "hot_question");
+        } else {
+          const clientId = contentItem.id + "|" + contentItem.type;
+          trackMessageSend(clientId, "hot_question");
+          setRobotMessage({
+            id: contentItem.id,
+            type: MessageType.Text,
+            headerType: HeaderType.MESSAGE,
+            senderType: MessageSender.ROBOT,
+            messageType: RobotMessageType.ROBOT_ACTION_CARD,
+            showFeedFooter: true,
+            content: "",
+            timestamp: Date.now(), // τ¿ìσ╛«σ╗╢Φ┐ƒ∩╝îτí«Σ┐¥σ£¿µ¼óΦ┐ÄΦ»¡Σ╣ïσÉÄ
+            senderName: "µÖ║Φâ╜σè⌐µëï",
+            robotData: {
+              // µ£║σÖ¿Σ║║τ¢╕σà│µò░µì«
+              ...contentItem,
+            },
+          });
+        }
+      });
+    });
+  };
+
+  // τº╗σè¿τ½»µ╕▓µƒô - Σ╜┐τö¿ Collapse µèÿσÅáΘ¥óµ¥┐
+  const renderMobileView = () => {
+    return (
+      <div className={`${styles.guideMenu} ${styles.mobileGuideMenu}`}>
+        <div className={styles.guideMenuHeader}>
+          <div style={{ fontWeight: 600, fontSize: 15 }}>
+            {data.content && (
+              <DangerouslySetInnerHTML msgContent={data.content} />
+            )}
+          </div>
+        </div>
+        <Collapse
+          accordion={false}
+          bordered={false}
+          className={styles.mobileCollapse}
+          activeKey={collapseActiveKey}
+          expandIconPosition="end"
+          onChange={(key) =>
+            setCollapseActiveKey(Array.isArray(key) ? key : [key])
+          }
+          items={categorizedQuestions.map((category) => {
+            const paginatedItems = getPaginatedItems(category);
+            return {
+              key: String(category.id),
+              label: (
+                <div className={styles.collapsePanelHeader}>
+                  {category.fileUrl && (
+                    <div className={styles.panelIcon}>
+                      <Image
+                        src={category.fileUrl}
+                        width={40}
+                        height={40}
+                        alt={category.title}
+                      />
+                    </div>
+                  )}
+                  <div className={styles.panelContent}>
+                    <span className={styles.panelTitle}>{category.title}</span>
+                    {category.description && (
+                      <span className={styles.panelDescription}>
+                        {category.description}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ),
+              children: (
+                <>
+                  <List
+                    className={styles.mobileList}
+                    dataSource={paginatedItems}
+                    split={false}
+                    locale={{
+                      emptyText: (
+                        <div className={styles.emptyState}>µÜéµùáτ¢╕σà│σåàσ«╣</div>
+                      ),
+                    }}
+                    renderItem={(configItem, index) => (
+                      <List.Item
+                        key={`${configItem.id}-${index}`}
+                        className={styles.mobileListItem}
+                        onClick={() =>
+                          handleQuestionClick(
+                            category,
+                            configItem as GuideMenuItemType,
+                          )
+                        }
+                        extra={
+                          <SvgRightArrow className={styles.listItemArrow} />
+                        }
+                      >
+                        <div className={styles.listItemContent}>
+                          <span className={styles.listItemText}>
+                            {configItem.relateContent}
+                          </span>
+                        </div>
+                      </List.Item>
+                    )}
+                  />
+                  {canShowRefresh(category) && (
+                    <div className={styles.mobileRefreshWrapper}>
+                      <button
+                        type="button"
+                        className={styles.mobileRefreshBtn}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRefresh(String(category.id));
+                        }}
+                      >
+                        <ReloadOutlined />
+                        <span>µìóΣ╕Çµë╣</span>
+                      </button>
+                    </div>
+                  )}
+                </>
+              ),
+            };
+          })}
+        />
+      </div>
+    );
+  };
+
+  const renderCategoryPane = (category: GuideMenuItemType) => {
+    const paginatedItems = getPaginatedItems(category);
+    return (
+      <div className={styles.tabPaneContent}>
+        <ul className={styles.configList}>
+          {paginatedItems.map((configItem, index) => (
+            <li
+              key={`${configItem.id}-${index}`}
+              className={styles.configListItem}
+              onClick={() =>
+                handleQuestionClick(category, configItem as GuideMenuItemType)
+              }
+            >
+              <span className={styles.configItemText}>
+                {configItem.relateContent}
+              </span>
+              <div className={styles.arrowIcon}>
+                <Image
+                  src={getPublicImagePath("arrow-right-fill.svg")}
+                  height={20}
+                  width={20}
+                  alt=""
+                />
+              </div>
+            </li>
+          ))}
+        </ul>
+        {paginatedItems.length === 0 && (
+          <div className={styles.emptyState}>µÜéµùáτ¢╕σà│σåàσ«╣</div>
+        )}
+      </div>
+    );
+  };
+
+  // PC τ½»∩╝ÜΦç¬τáöµ¿¬σÉæµ╗Üσè¿ Tab∩╝êσ»╣Θ╜É Semi collapsible∩╝ë∩╝îΘü┐σàì antd Tabs µ║óσç║Φ┐¢πÇîµ¢┤σñÜπÇìΣ╕ö transform µ╗ÜΣ╕ìσè¿
+  const renderPCView = () => {
+    const activeCategory = categorizedQuestions.find(
+      (cat) => String(cat.id) === activeKey,
+    );
+    return (
+      <div className={styles.guideMenu}>
+        <div className={styles.guideMenuHeader}>
+          <div style={{ fontWeight: 600, fontSize: 14 }}>
+            {data.content && (
+              <DangerouslySetInnerHTML msgContent={data.content} />
+            )}
+          </div>
+          {activeCategory && canShowRefresh(activeCategory) && (
+            <ReloadOutlined
+              className={styles.headerRefreshButton}
+              onClick={() => handleRefresh()}
+            />
+          )}
+        </div>
+        <ScrollableCategoryTabs
+          items={categorizedQuestions}
+          activeKey={activeKey}
+          getKey={(category) => String(category.id)}
+          onChange={setActiveKey}
+          renderLabel={(category, active) => (
+            <span className={styles.tabLabel}>
+              <span
+                className={`${styles.tabLabelText} ${active ? styles.tabLabelTextActive : ""}`}
+              >
+                {category.title}
+              </span>
+            </span>
+          )}
+        />
+        {activeCategory ? renderCategoryPane(activeCategory) : null}
+      </div>
+    );
+  };
+
+  return isMobile ? renderMobileView() : renderPCView();
+};
+
+export default GuideMenu;
+
+
+===== webpack://_N_E/./app/components/robot/components/aiAnswerQuestion/handoffLinkClick.ts =====
+
+import type { MouseEvent } from "react";
+import { RobotMessageExtensionType } from "@/app/store/types";
+import { tryParse } from "@/app/utils/object";
+
+export const GENERAL_INQUIRY_PATH_SUFFIX = "/my/support/general-inquiry";
+const CREATE_ORDER_TAG = "createOrder";
+
+/** delta µûçµ£¼Σ╕¡τÜä general-inquiry https Θô╛µÄÑ∩╝êσÉ½ QA σƒƒσÉì∩╝ë */
+const GENERAL_INQUIRY_HTTPS_URL_RE =
+  /https:\/\/[^\s<>"')\]]+\/my\/support\/general-inquiry[^\s<>"')\]]*/gi;
+
+export function isHandoffContextExtension(extension?: string): boolean {
+  if (!extension?.trim()) {
+    return false;
+  }
+  const parsed = tryParse(extension.trim()) as { type?: string } | null;
+  return parsed?.type === RobotMessageExtensionType.TransferCreateOrderLink;
+}
+
+export function resolveHandoffAiConversationId(
+  extension?: string,
+  aiConversationId?: string,
+): string | undefined {
+  const topLevel = aiConversationId?.trim();
+  if (topLevel) {
+    return topLevel;
+  }
+  if (!extension?.trim()) {
+    return undefined;
+  }
+  const parsed = tryParse(extension.trim()) as {
+    aiConversationId?: string;
+  } | null;
+  return parsed?.aiConversationId?.trim() || undefined;
+}
+
+export function isGeneralInquiryHttpsUrl(url: string): boolean {
+  try {
+    const linkUrl = new URL(url);
+    return (
+      linkUrl.protocol === "https:" &&
+      linkUrl.pathname.includes(GENERAL_INQUIRY_PATH_SUFFIX)
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Σ╕║ general-inquiry https Θô╛µÄÑΦ┐╜σèá id=aiConversationId∩╝êσÅè handoff σ£║µÖ»τÜä tag∩╝ë */
+export function appendHandoffParamsToGeneralInquiryUrl(
+  rawUrl: string,
+  conversationId: string,
+  options?: { withCreateOrderTag?: boolean },
+): string {
+  if (!conversationId.trim() || !isGeneralInquiryHttpsUrl(rawUrl)) {
+    return rawUrl;
+  }
+  try {
+    const linkUrl = new URL(rawUrl);
+    if (!linkUrl.searchParams.has("id")) {
+      linkUrl.searchParams.set("id", conversationId.trim());
+    }
+    if (options?.withCreateOrderTag) {
+      linkUrl.searchParams.set("tag", CREATE_ORDER_TAG);
+    }
+    return linkUrl.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
+/** σ░å delta µûçµ£¼Σ╕¡τÜä general-inquiry Φú╕Θô╛µÄÑµö╣σåÖΣ╕║σ╕ª id τÜäΘô╛µÄÑ */
+export function appendHandoffIdToGeneralInquiryUrlsInContent(
+  content: string,
+  conversationId?: string,
+  options?: { withCreateOrderTag?: boolean },
+): string {
+  if (!content || !conversationId?.trim()) {
+    return content;
+  }
+  return content.replace(GENERAL_INQUIRY_HTTPS_URL_RE, (matched) =>
+    appendHandoffParamsToGeneralInquiryUrl(matched, conversationId, options),
+  );
+}
+
+/** general-inquiry https Θô╛µÄÑτé╣σç╗∩╝ÜΦ┐╜σèá id=aiConversationId */
+export function handleHandoffGeneralInquiryLinkClick(
+  event: MouseEvent<HTMLElement>,
+  options: {
+    extension?: string;
+    aiConversationId?: string;
+  },
+): void {
+  const conversationId = resolveHandoffAiConversationId(
+    options.extension,
+    options.aiConversationId,
+  );
+  if (!conversationId) {
+    return;
+  }
+
+  const anchor = (event.target as HTMLElement).closest("a");
+  if (!anchor) {
+    return;
+  }
+
+  const rawHref = anchor.getAttribute("href");
+  if (!rawHref) {
+    return;
+  }
+
+  if (!isGeneralInquiryHttpsUrl(rawHref)) {
+    return;
+  }
+
+  const hrefWithParams = appendHandoffParamsToGeneralInquiryUrl(
+    rawHref,
+    conversationId,
+    { withCreateOrderTag: isHandoffContextExtension(options.extension) },
+  );
+  if (hrefWithParams === rawHref) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (anchor.target === "_blank") {
+    window.open(hrefWithParams, "_blank", "noopener,noreferrer");
+  } else {
+    window.location.assign(hrefWithParams);
+  }
+}
+
+
+===== webpack://_N_E/./app/components/robot/components/AIFooterShared/Satisfy.tsx =====
+
+import React, { useEffect, useMemo, useState } from "react";
+import styles from "./Satisfy.module.scss";
+import SvgLike from "@/app/icons/SvgLikeIcon.svg";
+import SvgDisLike from "@/app/icons/SvgDisLike.svg";
+import SvgCloseIcon from "@/app/icons/SvgCloseIcon.svg";
+import Feedback from "../aiFeedback";
+import { ReportParentContentEnum } from "@/app/types/typeConfig/report";
+import { IMConfigTypeEnum } from "@/app/types/typeConfig/chatQuestion";
+import { Popup } from "antd-mobile";
+import { isMobileDevice } from "@/app/utils/device";
+import { useTranslations } from "@/app/locales";
+import { useMessageStore } from "@/app/store";
+import {
+  Feedback as FeedbackType,
+  HeaderType,
+  isDislikeFeedbackPayload,
+  isLikeFeedbackPayload,
+  MessageSender,
+  MessageType,
+  RobotMessageType,
+} from "@/app/store/types";
+import { isOverseaEnv } from "@/app/utils/env";
+
+type CompletedRating = "none" | "like" | "dislike";
+
+function completedFromFeedback(feedback?: FeedbackType): CompletedRating {
+  if (!feedback) return "none";
+  if (isLikeFeedbackPayload(feedback)) return "like";
+  if (isDislikeFeedbackPayload(feedback)) return "dislike";
+  return "none";
+}
+
+export default function Satisfy({
+  feedback,
+  streamingId,
+  requestId,
+  parentContentInfo,
+  configType,
+  handleLike,
+  handleDislike,
+  knowledgeId,
+  messageSource,
+}: {
+  feedback?: FeedbackType;
+  streamingId?: string;
+  requestId?: string;
+  parentContentInfo?: {
+    parentContentId: string;
+    parentContent: string;
+    parentContentType: ReportParentContentEnum;
+  };
+  configType: IMConfigTypeEnum;
+  handleLike: () => void;
+  handleDislike: () => void;
+  /** σÅìΘªêσæ╜Σ╕¡τÜäτƒÑΦ»åσ║ôΘù«Θóÿ id∩╝¢Σ╕ìΣ╝áΘ╗ÿΦ«ñΦ╡░ AI σ£║µÖ»σ╕╕ΘçÅ */
+  knowledgeId?: string;
+  /** σÅìΘªêµ¥Ñµ║É∩╝ÜFAQ τ¢┤σç║σ¢₧τ¡öΣ╝á "faq" */
+  messageSource?: string;
+}) {
+  const [completed, setCompleted] = useState<CompletedRating>(() =>
+    completedFromFeedback(feedback),
+  );
+  /** τé╣Σ║åπÇîµ£¬Φºúσå│πÇì∩╝îµ¡úσ£¿Φ╡░σÅìΘªêµ╡üτ¿ï∩╝êµ£¬µÅÉΣ║ñΣ╕ìτ«ùΦ»äΣ╗╖σ«îµêÉ∩╝ë */
+  const [dislikeFlowOpen, setDislikeFlowOpen] = useState(false);
+  const [dislikePopupVisible, setDislikePopupVisible] = useState(false);
+  const t = useTranslations();
+  const setRobotMessage = useMessageStore((s) => s.setRobotMessage);
+
+  useEffect(() => {
+    const next = completedFromFeedback(feedback);
+    if (next !== "none") setCompleted(next);
+  }, [feedback]);
+
+  const dislikeReadonlyInitial = useMemo(() => {
+    if (!feedback || !isDislikeFeedbackPayload(feedback)) return null;
+    return {
+      feedbackType: feedback.feedbackType,
+      feedback: feedback.feedbackContent ?? "",
+      knowledgeId: feedback.knowledgeId,
+    };
+  }, [feedback]);
+
+  /** Σ╗à∩╝Üσ╖▓Φºúσå│τé╣σç╗σÉÄ∩╝îµêûµ£¬Φºúσå│Σ╕ö Feedback µÅÉΣ║ñµêÉσèƒσÉÄ */
+  const handleLikeClick = () => {
+    if (completed !== "none") return;
+    setDislikeFlowOpen(false);
+    setDislikePopupVisible(false);
+    setCompleted("like");
+    handleLike();
+  };
+
+  const handleDislikeClick = () => {
+    if (completed !== "none") return;
+    setDislikeFlowOpen(true);
+    if (isMobileDevice()) {
+      setDislikePopupVisible(true);
+    }
+  };
+
+  const handleFeedbackSubmitted = () => {
+    setCompleted("dislike");
+    setDislikeFlowOpen(false);
+    setDislikePopupVisible(false);
+    handleDislike();
+    /** Σ╕Ä RouteParamsHandler Σ╕¡ OP Θàìτ╜«µÄ¿ΘÇüΣ╕ÇΦç┤∩╝ÜµÅÉΣ║ñµ£¬Φºúσå│σÉÄΣ╕╗σè¿µÅÆσàÑΣ╕Çµ¥íµÖ║Φâ╜σè⌐µëïµ╢êµü»∩╝êPC/τº╗σè¿τ½»σÉîΘÇ╗Φ╛æ∩╝ë */
+    setRobotMessage({
+      content: isOverseaEnv() ? t.overseaDislikeReply : t.firstAIReply,
+      senderType: MessageSender.ROBOT,
+      timestamp: Date.now(),
+      type: MessageType.Text,
+      headerType: HeaderType.MESSAGE,
+      messageType: RobotMessageType.ROBOT_NORMAL_REPLY,
+      robotData: {},
+    });
+  };
+
+  const handleCloseDislikePopup = () => {
+    setDislikePopupVisible(false);
+    setDislikeFlowOpen(false);
+  };
+
+  return (
+    <>
+      <div className={styles.satisfy}>
+        <div className={styles.title}>{t.aiFeedback.satisfyTitle}</div>
+        <div
+          className={`${styles.options} ${completed !== "none" ? styles.commented : ""}`}
+        >
+          <div
+            className={`${styles.option} ${completed === "like" ? styles.active : ""}`}
+            onClick={handleLikeClick}
+          >
+            <SvgLike className={`${styles.icon} ${styles.like}`} />
+            <span>{t.aiFeedback.satisfyLike}</span>
+          </div>
+          <div
+            className={`${styles.option} ${completed === "dislike" ? styles.active : ""}`}
+            onClick={handleDislikeClick}
+          >
+            <SvgDisLike className={`${styles.icon} ${styles.dislike}`} />
+            <span>{t.aiFeedback.satisfyDislike}</span>
+          </div>
+        </div>
+      </div>
+      {completed === "like" && (
+        <div className={styles.satisfyLiked}>
+          <span>{t.aiFeedback.satisfyLiked}</span>
+        </div>
+      )}
+      {completed === "dislike" && dislikeReadonlyInitial && (
+        <div className={styles.disSatisfyReadonly}>
+          <Feedback
+            readOnly
+            readonlyInitial={dislikeReadonlyInitial}
+            streamingId={streamingId}
+            knowledgeId={knowledgeId}
+            messageSource={messageSource}
+            templateProps={{
+              likeOrDislike: "dislike",
+              requestId,
+            }}
+            type={isMobileDevice() ? "button" : "default"}
+            fromClassName={isMobileDevice() ? "buttonStyle" : undefined}
+            parentContentInfo={parentContentInfo}
+            configType={configType}
+          />
+        </div>
+      )}
+      {completed === "dislike" && !dislikeReadonlyInitial && (
+        <div className={styles.satisfyDislikedShort}>
+          <span>{t.aiFeedback.thanksFeedback}</span>
+        </div>
+      )}
+      {dislikeFlowOpen &&
+        completed === "none" &&
+        (isMobileDevice() ? (
+          <Popup
+            closeIcon={<SvgCloseIcon onClick={handleCloseDislikePopup} />}
+            showCloseButton
+            visible={dislikePopupVisible}
+            onClose={handleCloseDislikePopup}
+            destroyOnClose={true}
+            className={styles.disSatisfyPopup}
+            style={{ zIndex: 2001, borderRadius: "10px" }}
+          >
+            <div className={styles.disSatisfy}>
+              <Feedback
+                streamingId={streamingId}
+                knowledgeId={knowledgeId}
+                messageSource={messageSource}
+                onSubmit={handleFeedbackSubmitted}
+                fromClassName="buttonStyle"
+                templateProps={{
+                  likeOrDislike: "dislike",
+                  requestId,
+                }}
+                type="button"
+                parentContentInfo={parentContentInfo}
+                configType={configType}
+              />
+            </div>
+          </Popup>
+        ) : (
+          <div className={styles.disSatisfy}>
+            <Feedback
+              streamingId={streamingId}
+              knowledgeId={knowledgeId}
+              messageSource={messageSource}
+              onSubmit={handleFeedbackSubmitted}
+              templateProps={{
+                likeOrDislike: "dislike",
+                requestId,
+              }}
+              parentContentInfo={parentContentInfo}
+              configType={configType}
+            />
+          </div>
+        ))}
+    </>
+  );
+}
+
+
+===== webpack://_N_E/./app/components/robot/components/sellingFormShared/parseExtension.ts =====
+
+import type { OrderProduct } from "@/app/api/orders";
+import { tryParse } from "@/app/utils/object";
+import { parseSubmittedProducts } from "./productOptions";
+
+export type SellingFormFieldSource = "selected" | "manual";
+
+export type SellingLogisticsSubmittedPayload = {
+  orderId?: string;
+  orderChannel?: string;
+  trackingNumber?: string;
+  orderSource?: SellingFormFieldSource;
+  trackingSource?: SellingFormFieldSource;
+};
+
+export type SellingOrdersSubmittedPayload = {
+  orderId?: string;
+  orderChannel?: string;
+  /** µùºτëêσìòσòåσôüσ¡ùτ¼ªΣ╕▓ */
+  product?: string;
+  products?: OrderProduct[];
+  orderSource?: SellingFormFieldSource;
+  productSource?: SellingFormFieldSource;
+};
+
+export type SellingLogisticsExtension = {
+  formType: string;
+  submitted: boolean;
+  submissionId?: string;
+  submittedPayload?: SellingLogisticsSubmittedPayload;
+};
+
+export type SellingOrdersExtension = {
+  formType: string;
+  submitted: boolean;
+  submissionId?: string;
+  submittedPayload?: SellingOrdersSubmittedPayload;
+};
+
+function normalizeFormTypeKey(formType: unknown): string {
+  if (typeof formType !== "string" || !formType.trim()) return "";
+  return formType.trim().toLowerCase().replace(/_/g, "");
+}
+
+export function isSellingLogisticsFormType(formType: unknown): boolean {
+  return normalizeFormTypeKey(formType) === "sellinglogistics";
+}
+
+export function isSellingOrdersFormType(formType: unknown): boolean {
+  return normalizeFormTypeKey(formType) === "sellingorders";
+}
+
+function resolveSellingFormExtensionRecord(
+  extension: string,
+): Record<string, unknown> | null {
+  const parsed = tryParse(extension.trim());
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  const outer = parsed as Record<string, unknown>;
+
+  const nestedExtension = outer.extension;
+  if (typeof nestedExtension === "string" && nestedExtension.trim()) {
+    const inner = tryParse(nestedExtension.trim());
+    if (inner && typeof inner === "object" && !Array.isArray(inner)) {
+      return { ...(inner as Record<string, unknown>), ...outer };
+    }
+  }
+
+  return outer;
+}
+
+function isSubmittedFlag(value: unknown): boolean {
+  return value === true || value === "true" || value === 1;
+}
+
+function parseFieldSource(value: unknown): SellingFormFieldSource | undefined {
+  return value === "selected" || value === "manual" ? value : undefined;
+}
+
+function parseLogisticsSubmittedPayload(
+  payload: unknown,
+): SellingLogisticsSubmittedPayload | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+  const p = payload as Record<string, unknown>;
+  const orderId = typeof p.orderId === "string" ? p.orderId.trim() : undefined;
+  const orderChannel =
+    typeof p.orderChannel === "string" ? p.orderChannel.trim() : undefined;
+  const trackingNumber =
+    typeof p.trackingNumber === "string" ? p.trackingNumber.trim() : undefined;
+  const orderSource = parseFieldSource(p.orderSource);
+  const trackingSource = parseFieldSource(p.trackingSource);
+  if (!orderId && !orderChannel && !trackingNumber) {
+    return undefined;
+  }
+  return {
+    orderId,
+    orderChannel,
+    trackingNumber,
+    orderSource,
+    trackingSource,
+  };
+}
+
+function parseOrdersSubmittedPayload(
+  payload: unknown,
+): SellingOrdersSubmittedPayload | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+  const p = payload as Record<string, unknown>;
+  const orderId = typeof p.orderId === "string" ? p.orderId.trim() : undefined;
+  const orderChannel =
+    typeof p.orderChannel === "string" ? p.orderChannel.trim() : undefined;
+  const product = typeof p.product === "string" ? p.product.trim() : undefined;
+  const products = parseSubmittedProducts(p.products);
+  const orderSource = parseFieldSource(p.orderSource);
+  const productSource = parseFieldSource(p.productSource);
+  if (!orderId && !orderChannel && !product && products.length === 0) {
+    return undefined;
+  }
+  return {
+    orderId,
+    orderChannel,
+    product,
+    ...(products.length > 0 ? { products } : {}),
+    orderSource,
+    productSource,
+  };
+}
+
+export type SellingFormMeta = {
+  aiConversationId: string;
+  formMessageClientId: string;
+};
+
+export type SellingFormMetaSource = {
+  extension?: string | null;
+  aiConversationId?: string | null;
+  formMessageClientId?: string | null;
+};
+
+function readFormMetaFromExtension(
+  extension: string,
+): Partial<SellingFormMeta> {
+  const raw = resolveSellingFormExtensionRecord(extension);
+  if (!raw) {
+    return {};
+  }
+  const aiConversationId =
+    typeof raw.aiConversationId === "string" ? raw.aiConversationId.trim() : "";
+  const formMessageClientId =
+    typeof raw.clientId === "string" ? raw.clientId.trim() : "";
+  return {
+    ...(aiConversationId ? { aiConversationId } : {}),
+    ...(formMessageClientId ? { formMessageClientId } : {}),
+  };
+}
+
+export function parseSellingFormMeta(
+  source?: string | null | SellingFormMetaSource,
+): SellingFormMeta | null {
+  const input: SellingFormMetaSource =
+    source == null || typeof source === "string"
+      ? { extension: source }
+      : source;
+
+  let aiConversationId = "";
+  let formMessageClientId = "";
+
+  if (input.extension?.trim()) {
+    const fromExt = readFormMetaFromExtension(input.extension.trim());
+    aiConversationId = fromExt.aiConversationId ?? "";
+    formMessageClientId = fromExt.formMessageClientId ?? "";
+  }
+
+  if (!aiConversationId && typeof input.aiConversationId === "string") {
+    aiConversationId = input.aiConversationId.trim();
+  }
+  if (!formMessageClientId && typeof input.formMessageClientId === "string") {
+    formMessageClientId = input.formMessageClientId.trim();
+  }
+
+  if (!aiConversationId || !formMessageClientId) {
+    return null;
+  }
+  return { aiConversationId, formMessageClientId };
+}
+
+/** @deprecated Σ╜┐τö¿ parseSellingFormMeta */
+export const parseSellingLogisticsFormMeta = parseSellingFormMeta;
+
+/** @deprecated Σ╜┐τö¿ parseSellingFormMeta */
+export const parseSellingOrdersFormMeta = parseSellingFormMeta;
+
+export function parseSellingLogisticsExtension(
+  extension?: string | null,
+): SellingLogisticsExtension | null {
+  if (extension == null || typeof extension !== "string" || !extension.trim()) {
+    return null;
+  }
+
+  const raw = resolveSellingFormExtensionRecord(extension);
+  if (!raw || !isSellingLogisticsFormType(raw.formType)) {
+    return null;
+  }
+
+  const submittedPayload = parseLogisticsSubmittedPayload(
+    raw.submittedPayload ?? raw.payload,
+  );
+  const submitted =
+    isSubmittedFlag(raw.submitted) || submittedPayload !== undefined;
+  return {
+    formType: String(raw.formType).trim(),
+    submitted,
+    submissionId:
+      typeof raw.submissionId === "string" ? raw.submissionId : undefined,
+    submittedPayload,
+  };
+}
+
+export function parseSellingOrdersExtension(
+  extension?: string | null,
+): SellingOrdersExtension | null {
+  if (extension == null || typeof extension !== "string" || !extension.trim()) {
+    return null;
+  }
+
+  const raw = resolveSellingFormExtensionRecord(extension);
+  if (!raw || !isSellingOrdersFormType(raw.formType)) {
+    return null;
+  }
+
+  const submittedPayload = parseOrdersSubmittedPayload(
+    raw.submittedPayload ?? raw.payload,
+  );
+  const submitted =
+    isSubmittedFlag(raw.submitted) || submittedPayload !== undefined;
+  return {
+    formType: String(raw.formType).trim(),
+    submitted,
+    submissionId:
+      typeof raw.submissionId === "string" ? raw.submissionId : undefined,
+    submittedPayload,
+  };
+}
+
+export function parseSellingFormExtension(
+  extension?: string | null,
+):
+  | ({ variant: "logistics" } & SellingLogisticsExtension)
+  | ({ variant: "orders" } & SellingOrdersExtension)
+  | null {
+  const logistics = parseSellingLogisticsExtension(extension);
+  if (logistics) {
+    return { variant: "logistics", ...logistics };
+  }
+  const orders = parseSellingOrdersExtension(extension);
+  if (orders) {
+    return { variant: "orders", ...orders };
+  }
+  return null;
+}
+
+
+===== webpack://_N_E/./app/components/robot/robotMessageItem/index.tsx =====
+
+"use client";
+import React, { useCallback, useState, useRef, useMemo } from "react";
+import styles from "./index.module.scss";
+import { formatTimestamp } from "@/app/utils/date";
+import Image from "next/image";
+import {
+  HeaderType,
+  MessageType,
+  parseFeedbackFromRobotExtension,
+  RobotMessage,
+  RobotMessageType,
+  ScrollToBottom,
+} from "@/app/store/types";
+import { getPublicImagePath } from "@/app/utils/image";
+import DangerouslySetInnerHTML from "@/app/ui/dangerouslySetInnerHTML";
+import GuideMenu from "../components/guideMenu";
+import AiAnswerQuestion from "../components/aiAnswerQuestion";
+import AiAnswerHistory from "../components/aiAnswerHistory";
+import { ScrollAction } from "@/app/hooks/useReadScrollToBottom";
+import TechAIFooter from "../components/techAIFooter";
+import { AIFooter } from "../components/AIFooterShared";
+import type { AIFooterData } from "../components/AIFooterShared";
+import Feedback from "../components/aiFeedback";
+import { ReportParentContentEnum } from "@/app/types/typeConfig/report";
+import { IMConfigTypeEnum } from "@/app/types/typeConfig/chatQuestion";
+import { AIQuestionList } from "@/app/hooks/useClientInit";
+import FeedFooter from "../components/feedFooter";
+import SelectHotQuestion, {
+  mobileRobotAIKeywordItem,
+} from "../components/mobile/selectHotAIQuestion";
+import { useMessageStore } from "@/app/store";
+import UnHandleWorkOrder from "../components/unHandleWorkOrder";
+import AiSellingLogistics from "../components/aiSellingLogistics";
+import AiSellingOrders from "../components/aiSellingOrders";
+import AiInteractionCard from "../components/aiInteractionCard";
+import { parseSellingFormExtension } from "../components/sellingFormShared/parseExtension";
+import {
+  isRenderableInteractionCardPayload,
+  parseInteractionCardPayload,
+} from "@/app/utils/interactionCardSse";
+import {
+  getGuidanceCardDisplayContent,
+  isRenderableGuidanceCardMessage,
+} from "@/app/utils/firstAIReplyContent";
+import { useTranslations } from "@/app/locales";
+import MallContextCard from "@/app/components/chat/modules/MallContextCard";
+import OrderIdentityCard from "@/app/components/chat/modules/orderIdentityCard";
+import { parseMallContextCard } from "@/app/utils/mallContextCard";
+
+interface IProps {
+  msg: RobotMessage & {
+    handleScrollToBottom?: ScrollToBottom;
+  };
+}
+
+// σ«ÜΣ╣ëσè¿µÇüτ╗äΣ╗╢τÜäτ▒╗σ₧ï
+type DynamicComponent =
+  | React.ComponentType<Record<string, unknown>>
+  | React.ElementType;
+
+// µ£║σÖ¿Σ║║µ╢êµü»τ╗äΣ╗╢ - µö»µîüσ»îµûçµ£¼µ╕▓µƒôτÜäΦüèσñ⌐µ░öµ│í
+export default function RobotMessageItem({ msg }: IProps) {
+  const t = useTranslations();
+  const {
+    id,
+    content,
+    timestamp,
+    senderName,
+    messageType,
+    error,
+    robotData,
+    streaming,
+    streamingId,
+    handleScrollToBottom,
+    headerType,
+    type,
+    extension,
+    clientId,
+    aiConversationId,
+    ...rest
+  } = msg;
+
+  const feedback = parseFeedbackFromRobotExtension(extension);
+  const isMallContextCard =
+    type === MessageType.MallProductCard || type === MessageType.MallOrderCard;
+  const mallContextCard = useMemo(
+    () => (isMallContextCard ? parseMallContextCard(extension) : null),
+    [extension, isMallContextCard],
+  );
+
+  const sellingFormExt = useMemo(
+    () =>
+      type === MessageType.FormPush && extension
+        ? parseSellingFormExtension(extension)
+        : null,
+    [type, extension],
+  );
+  const isKnownSellingFormPush = !!sellingFormExt;
+
+  const isRenderableGuidanceCard = isRenderableGuidanceCardMessage(
+    type,
+    extension,
+    content,
+  );
+
+  const isRenderableInteractionCard = useMemo(
+    () =>
+      type === MessageType.InteractionCard &&
+      isRenderableInteractionCardPayload(
+        parseInteractionCardPayload(extension),
+      ),
+    [type, extension],
+  );
+
+  const guidanceCardHtml = useMemo(() => {
+    if (!isRenderableGuidanceCard) return "";
+    return getGuidanceCardDisplayContent(extension, content, t);
+  }, [isRenderableGuidanceCard, extension, content, t]);
+
+  /**
+   * τè╢µÇüΦ»┤µÿÄ∩╝Ü
+   * - streaming: σñûΘâ¿Σ╝áσàÑ∩╝îΦí¿τñ║µò░µì«µ╡üµÿ»σÉªµ¡úσ£¿µÄÑµö╢
+   * - typingEnd: µëôσ¡ùµ£║µÿ»σÉªσ«îµêÉµëôσì░∩╝êσîàµï¼Φç¬τä╢σ«îµêÉσÆîτö¿µê╖σü£µ¡óσÉÄτÜäσ«îµêÉ∩╝ë
+   */
+  const [typingEnd, setTypingEnd] = useState(
+    messageType !== RobotMessageType.ROBOT_AI &&
+      messageType !== RobotMessageType.ROBOT_SSE_REPLY,
+  );
+  const [userStopped, setUserStopped] = useState(false);
+
+  const setAiTypingEnd = useMessageStore((s) => s.setAiTypingEnd);
+  const aiTypingEnd = useMessageStore((s) => s.aiTypingEnd);
+
+  // Σ╜┐τö¿ ref µ¥ÑΦ┐╜Φ╕¬ feedFooter τÜä DOM σàâτ┤á
+  const feedFooterRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // Σ╕╗σè¿σü£µ¡óµëôσì░µ£║µëôσ¡ù
+  // const handleStop = useCallback(() => {
+  //   setUserStopped(true);
+  //   setTypingEnd(true);
+  //   if (typeof robotData?.stopStreaming === "function") {
+  //     robotData.stopStreaming();
+  //   }
+  // }, [robotData]);
+
+  // AI µ╡üσ╝Åµëôσ¡ùµù╢Θ⌐▒σè¿µ╗Üσè¿Φ╖ƒΘÜÅ∩╝Üτ▓ÿσ║òµ¿íσ╝ÅΣ╕ïµîüτ╗¡Φ┤┤σ║ò∩╝êτ▒╗Σ╝╝ ChatGPT µ╡üσ╝Åσ¢₧σñì∩╝ë
+  const handleAIContentUpdate = useCallback(() => {
+    handleScrollToBottom?.(ScrollAction.AUTO);
+  }, [handleScrollToBottom]);
+
+  // AIµëôσ¡ùΦç¬σ╖▒τ╗ôµ¥ƒ
+  const handleAITypingEnd = useCallback(() => {
+    setTypingEnd(true);
+    setAiTypingEnd(true); // σÉîµ¡Ñσê░σà¿σ▒Ç store
+  }, [setAiTypingEnd]);
+
+  // σñäτÉåΘçìµû░τöƒµêÉ
+  const handleRedo = useCallback(() => {
+    setTypingEnd(false);
+    setAiTypingEnd(false); // σÉîµ¡Ñσê░σà¿σ▒Ç store
+    if (typeof robotData?.retry === "function") {
+      robotData.retry(id);
+    }
+  }, [robotData, id, setAiTypingEnd]);
+
+  // FeedFooter / ActionCard τ¡ëσ╝éµ¡Ñσåàσ«╣µ╕▓µƒôµÆæΘ½ÿσÉÄτÜäΦ┤┤σ║òΦ╖ƒΘÜÅ∩╝î
+  // τ╗ƒΣ╕Çτö▒ useScrollToBottom σ╝òµôÄτÜä ResizeObserver µÄÑτ«í∩╝îΦ┐ÖΘçîΣ╕ìσåìσìòτï¼τ¢æσÉ¼ DOMπÇé
+
+  // µá╣µì«Σ╕ìσÉîτÜäµ£║σÖ¿Σ║║µ╢êµü»τ▒╗σ₧ïµ╕▓µƒôΣ╕ìσÉîτÜäσåàσ«╣
+  const renderContent = () => {
+    if (type === MessageType.OrderIdentityCard) {
+      return <OrderIdentityCard msg={msg} />;
+    }
+    if (type === MessageType.FormPush && extension && sellingFormExt) {
+      if (sellingFormExt.variant === "orders") {
+        return (
+          <AiSellingOrders
+            extension={extension}
+            aiConversationId={aiConversationId}
+            formMessageClientId={clientId}
+          />
+        );
+      }
+      return (
+        <AiSellingLogistics
+          extension={extension}
+          aiConversationId={aiConversationId}
+          formMessageClientId={clientId}
+        />
+      );
+    }
+    if (isRenderableGuidanceCard) {
+      return (
+        <div className={styles.welcomeContent}>
+          <DangerouslySetInnerHTML msgContent={guidanceCardHtml} />
+        </div>
+      );
+    }
+    if (isRenderableInteractionCard) {
+      return <AiInteractionCard extension={extension} messageId={id} />;
+    }
+
+    switch (messageType) {
+      case RobotMessageType.ROBOT_WELCOME:
+        return (
+          <div className={styles.welcomeContent}>
+            <DangerouslySetInnerHTML msgContent={content} />
+          </div>
+        );
+
+      case RobotMessageType.ROBOT_RECOMMEND_QUESTION:
+        return <GuideMenu data={robotData?.questions as AIQuestionList} />;
+
+      case RobotMessageType.ROBOT_FAQ:
+        return (
+          <div className={styles.welcomeContent}>
+            <DangerouslySetInnerHTML msgContent={robotData?.reply as string} />
+          </div>
+        );
+
+      case RobotMessageType.ROBOT_SSE_REPLY:
+        return (
+          <AiAnswerQuestion
+            content={content}
+            streaming={streaming}
+            error={error}
+            staticDisplay={streaming !== true}
+            onContentUpdate={handleAIContentUpdate}
+            onTypingEnd={handleAITypingEnd}
+            {...rest}
+          />
+        );
+      case RobotMessageType.ROBOT_SSE_HISTORY:
+        return (
+          <AiAnswerHistory
+            content={content}
+            extension={extension}
+            aiConversationId={aiConversationId}
+          />
+        );
+      case RobotMessageType.ROBOT_FEEDBACK:
+        return (
+          <Feedback
+            streamingId={streamingId}
+            templateProps={{
+              likeOrDislike: robotData?.feedback as "like" | "dislike",
+              requestId: robotData?.requestId as string,
+            }}
+            parentContentInfo={
+              robotData?.parentContentInfo as {
+                parentContentId: string;
+                parentContent: string;
+                parentContentType: ReportParentContentEnum;
+              }
+            }
+            configType={robotData?.configType as IMConfigTypeEnum}
+          />
+        );
+      case RobotMessageType.ROBOT_ACTION_CARD:
+        const Component = robotData?.template as DynamicComponent;
+        return (
+          Component && (
+            <Component
+              key={robotData?.uniqueKey}
+              {...robotData}
+              handleScrollToBottom={handleScrollToBottom}
+            ></Component>
+          )
+        );
+      case RobotMessageType.ROBOT_HANDY_SELECT_HOT_QUESTION:
+        return (
+          <SelectHotQuestion
+            id="mobile_robot_hot_question"
+            title={robotData?.title as string}
+            data={robotData?.questionList as mobileRobotAIKeywordItem[]}
+          />
+        );
+      case RobotMessageType.ROBOT_UNHANDLED_WORK_ORDER:
+        return <UnHandleWorkOrder content={content} />;
+      default:
+        return <DangerouslySetInnerHTML msgContent={content} />;
+    }
+  };
+
+  // ΦÄ╖σÅûµ£║σÖ¿Σ║║σÉìτº░
+  const getRobotName = () => {
+    return senderName || "µÖ║Φâ╜σè⌐µëï";
+  };
+
+  /** µ£¬Φ»åσê½τÜä form_push ΘÇÜτƒÑ∩╝îΣ╕ìσ▒òτñ║σìáΣ╜ìµ░öµ│í */
+  if (type === MessageType.FormPush && !isKnownSellingFormPush) {
+    return null;
+  }
+
+  /** σòåσƒÄσìíτëç∩╝Üσ▒àΣ╕¡τï¼τ½ïσìíτëç∩╝îΣ╕ìΦ╡░µ£║σÖ¿Σ║║µ░öµ│í∩╝êµùáσñ┤σâÅ∩╝îµù╢Θù┤σ▒òτñ║σ£¿σìíτëçΣ╕èµû╣σ▒àΣ╕¡∩╝ë */
+  if (isMallContextCard) {
+    if (!mallContextCard) return null;
+    return (
+      <MallContextCard
+        msg={msg}
+        payload={mallContextCard}
+        timestamp={timestamp}
+      />
+    );
+  }
+
+  /** µ£¬Φ»åσê½τÜä guidance_card∩╝îΣ╕ìσ▒òτñ║σìáΣ╜ìµ░öµ│í */
+  if (type === MessageType.GuidanceCard && !isRenderableGuidanceCard) {
+    return null;
+  }
+
+  /** µ£¬Φ»åσê½τÜä interaction_card∩╝îΣ╕ìσ▒òτñ║σìáΣ╜ìµ░öµ│í */
+  if (type === MessageType.InteractionCard && !isRenderableInteractionCard) {
+    return null;
+  }
+
+  return (
+    // Dialog µ╢êµü»Σ╕ìµ╕▓µƒôσñûσ▒éσ«╣σÖ¿
+    <>
+      {robotData && robotData.type === "Dialog" ? (
+        renderContent()
+      ) : (
+        <div className={`${styles.robotMessage} ${styles.service}`}>
+          {/* µ╢êµü»Σ┐íµü» */}
+          <div className={styles.messageInfo}>
+            {/* <div className={styles.messageSender}>{getRobotName()}</div> */}
+            <div className={styles.messageTime}>
+              {formatTimestamp(timestamp)}
+            </div>
+          </div>
+
+          {/* µ╢êµü»Σ╕╗Σ╜ô */}
+          <div className={styles.messageInner}>
+            {/* σñ┤σâÅ */}
+            <div className={styles.messageHeader}>
+              <div className={styles.messageAvatar}>
+                <Image
+                  src={getPublicImagePath("aiAvatar.svg")}
+                  alt="robot avatar"
+                  width={36}
+                  height={36}
+                />
+              </div>
+            </div>
+
+            {/* µ╢êµü»σåàσ«╣σ«╣σÖ¿ */}
+            <div className={styles.messageContentContainer} ref={contentRef}>
+              <div
+                className={styles.messageContent}
+                data-message-type={messageType}
+                data-type={type}
+              >
+                {renderContent()}
+              </div>
+              {/* AI σ«₧µù╢σ¢₧σñìΣ╕ÄσÄåσÅ▓ SSE σ╜óµÇüσ¢₧σñìσ¥çσ▒òτñ║σ║òΘâ¿µôìΣ╜£µáÅ */}
+              {messageType === RobotMessageType.ROBOT_SSE_REPLY &&
+                type !== MessageType.FormPush &&
+                type !== MessageType.GuidanceCard &&
+                type !== MessageType.InteractionCard && (
+                  <div className={styles.techAIFooter}>
+                    <TechAIFooter
+                      streamingId={streamingId}
+                      streaming={streaming}
+                      data={robotData}
+                      requestId={robotData?.requestId as string}
+                      error={error}
+                      content={content}
+                      aiTypingEnd={aiTypingEnd}
+                      // onStop={handleStop}
+                      onRedo={handleRedo}
+                      msg={msg}
+                    />
+                  </div>
+                )}
+              {/* FAQ τ¢┤σç║σ¢₧τ¡ö∩╝êµ£ë messageId∩╝ëσ▒òτñ║τé╣Φ╡₧τé╣Φ╕⌐∩╝îσñìτö¿ AI σ║òΘâ¿µáÅ */}
+              {messageType === RobotMessageType.ROBOT_ACTION_CARD &&
+                !!robotData?.messageId && (
+                  <div className={styles.techAIFooter}>
+                    <AIFooter
+                      data={{
+                        parentContentInfo:
+                          robotData?.parentContentInfo as AIFooterData["parentContentInfo"],
+                      }}
+                      configType={IMConfigTypeEnum.techAiFAQ}
+                      statusText=""
+                      showFooter
+                      showActions={false}
+                      showSatisfy
+                      streamingId={robotData?.messageId as string}
+                      knowledgeId={robotData?.id as string}
+                      messageSource="faq"
+                      content={
+                        (robotData?.data as { reply?: string })?.reply as string
+                      }
+                    />
+                  </div>
+                )}
+              {/* µÖ«ΘÇÜΣ┐íµü»τÜäσ║òΘâ¿µáÅ */}
+              {headerType === HeaderType.ROBOT && type === MessageType.AI && (
+                <div className={styles.techAIFooter} ref={feedFooterRef}>
+                  <FeedFooter
+                    data={robotData}
+                    requestId={robotData?.requestId as string}
+                    streamingId={streamingId}
+                    feedback={feedback}
+                    extension={extension}
+                    content={
+                      content ||
+                      (robotData?.reply as string) ||
+                      (robotData?.message as string) ||
+                      ((robotData?.data as { reply?: string })?.reply as string)
+                    }
+                    msg={msg}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+
+===== webpack://_N_E/./app/components/chat/modules/ChatNotice.tsx =====
+
+"use client";
+
+import React, { useEffect, useState } from "react";
+import { useTranslations } from "@/app/locales";
+import { chatNoticeLocalStore } from "@/app/localStore/chatNotice";
+import styles from "./ChatNotice.module.scss";
+import SvgClose from "@/app/icons/close.svg";
+import { isOverseaEnv } from "@/app/utils/env";
+
+export default function ChatNotice() {
+  const t = useTranslations();
+  const [visible, setVisible] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    setVisible(!chatNoticeLocalStore.isDismissed());
+  }, []);
+
+  const handleClose = () => {
+    chatNoticeLocalStore.dismiss();
+    setVisible(false);
+  };
+
+  if (visible !== true || !isOverseaEnv()) {
+    return null;
+  }
+
+  return (
+    <div className={styles.chatNotice}>
+      <div
+        className={styles.noticeContent}
+        dangerouslySetInnerHTML={{ __html: t.chat.noticeTips }}
+      />
+      <button
+        type="button"
+        className={styles.closeBtn}
+        aria-label="Close"
+        onClick={handleClose}
+      >
+        <SvgClose className={styles.closeIcon} />
+      </button>
+    </div>
+  );
+}
+
+
+===== webpack://_N_E/./app/ui/dangerouslySetInnerHTML/index.tsx =====
+
+"use client";
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+} from "react";
+import DOMPurify from "dompurify";
+import md from "@/app/utils/markdown";
+import styles from "./DangerouslySetInnerHTML.module.scss";
+import DesktopImagePreview from "@/app/ui/DesktopImagePreview";
+import { ImageViewer } from "antd-mobile";
+import { isMobileDevice } from "@/app/utils/device";
+
+interface Props extends Omit<
+  React.HTMLAttributes<HTMLDivElement>,
+  "dangerouslySetInnerHTML" | "children"
+> {
+  msgContent: string;
+}
+
+// τ╝ôσ¡ÿσ«ëσà¿σñäτÉåσç╜µò░τÜäτ╗ôµ₧£
+const markdownCache = new Map<string, string>();
+
+// µúÇµƒÑσ¡ùτ¼ªΣ╕▓µÿ»σÉªσîàσÉ½HTMLµáçτ¡╛τÜäσç╜µò░
+const containsHTMLTags = (text: string): boolean => {
+  return /<[a-z][\s\S]*>/i.test(text);
+};
+
+const safeMarkdown = (raw: string): string => {
+  if (!raw || !raw.trim()) return "";
+
+  if (/^\*{3,}$/.test(raw)) return raw;
+
+  if (markdownCache.has(raw)) {
+    return markdownCache.get(raw)!;
+  }
+
+  const purifyConfig = {
+    ADD_ATTR: ["target"],
+    ALLOWED_URI_REGEXP:
+      /^(?:(?:https?|ftp|mailto|tel|bambulab):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+  };
+  try {
+    const html = md.render(raw.replace(/<br\/>/g, "\n "));
+    // const sanitizedHtml = DOMPurify.sanitize(html, purifyConfig);
+    // markdownCache.set(raw, sanitizedHtml);
+    return html;
+  } catch (error) {
+    console.error("MarkdownΦºúµ₧ÉΘöÖΦ»»:", error);
+    const fallback = DOMPurify.sanitize(raw, purifyConfig);
+    markdownCache.set(raw, fallback);
+    return fallback;
+  }
+};
+
+// τï¼τ½ïτÜä Markdown µ╕▓µƒôτ╗äΣ╗╢
+const MarkdownRenderer = React.memo(
+  React.forwardRef<
+    HTMLDivElement,
+    {
+      content: string;
+      style: React.CSSProperties;
+      className: string;
+    } & React.HTMLAttributes<HTMLDivElement>
+  >(({ content, style, className, ...restProps }, ref) => {
+    return (
+      <div
+        {...restProps}
+        dangerouslySetInnerHTML={{ __html: content }}
+        className={className}
+        style={style}
+        ref={ref}
+      />
+    );
+  }),
+);
+
+// Σ╕╗τ╗äΣ╗╢
+export default function DangerouslySetInnerHTML({
+  msgContent,
+  ...restProps
+}: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [previewSrc, setPreviewSrc] = useState(""); // Σ╜┐τö¿τè╢µÇüτ«íτÉåΘóäΦºêσ¢╛τëçURL
+  /** Θü┐σàì SSR/µ░┤σÉêµù╢ isMobileDevice() Σ╕Äσ«óµê╖τ½»Σ╕ìΣ╕ÇΦç┤∩╝¢Θªûσ╕ºσ¢║σ«Ü false∩╝îΣ╕Äµ£ìσèíτ½»Σ╕ÇΦç┤ */
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    setIsMobile(isMobileDevice());
+  }, []);
+
+  // σñäτÉåMarkdownσåàσ«╣∩╝Üσ┐àΘí╗σ£¿µ╕▓µƒôµ£ƒσÉîµ¡Ñτ«ùσç║πÇé
+  // µö╛σê░ state + effect ΘçîΣ╝ÜΦ«⌐µ»Åµ¼íµîéΦ╜╜σàêσç║τÄ░Σ╕ÇΣ╕¬τ⌐║µ¡úµûç∩╝îµ╢êµü»Φèéτé╣ΘçìµîéΦ╜╜µù╢
+  // µ░öµ│íΣ╝ÜσàêσíîµÄëΣ╕ÇΦíîΘ½ÿσ║ªπÇüΣ╕ïΣ╕Çσ╕ºσåìσ╝╣σ¢₧∩╝îΦí¿τÄ░Σ╕║σêùΦí¿µèûσè¿πÇé
+  const contentText = useMemo(
+    () =>
+      msgContent && typeof msgContent === "string"
+        ? safeMarkdown(msgContent)
+        : "",
+    [msgContent],
+  );
+
+  // σÉêσ╣╢ΘÇÅΣ╝áτÜästyleσÆîσåàτ╜«τÜästyle∩╝êΘÇÅΣ╝ástyleΣ╝ÿσàêτ║ºµ¢┤Θ½ÿ∩╝ë
+  const mergedStyle: React.CSSProperties = useMemo(() => {
+    return {
+      ...restProps.style,
+    };
+  }, [restProps.style]);
+
+  // Σ╜┐τö¿useCallbackτ╝ôσ¡ÿΣ║ïΣ╗╢σñäτÉåσç╜µò░
+  const handleImageClick = useCallback((e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+
+    // µúÇµƒÑτé╣σç╗τÜäµÿ»σÉªµÿ»σ¢╛τëç
+    if (target.tagName === "IMG" && target.parentElement?.tagName !== "A") {
+      const url = target.getAttribute("src");
+      // Θ¬îΦ»üσ¢╛τëçURL
+      if (url && /^https?:\/\//i.test(url)) {
+        e.preventDefault();
+        e.stopPropagation();
+        setPreviewSrc(url); // τ¢┤µÄÑΦ«╛τ╜«τè╢µÇü
+        setPreviewVisible(true);
+      }
+    }
+  }, []);
+
+  // µ╖╗σèáΣ║ïΣ╗╢τ¢æσÉ¼
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container) {
+      container.addEventListener(
+        "click",
+        handleImageClick as unknown as EventListener,
+      );
+    }
+
+    return () => {
+      if (container) {
+        container.removeEventListener(
+          "click",
+          handleImageClick as unknown as EventListener,
+        );
+      }
+    };
+  }, [handleImageClick]);
+
+  return (
+    <>
+      <MarkdownRenderer
+        content={contentText}
+        style={mergedStyle}
+        className={`${styles.container} ${containsHTMLTags(msgContent || "") ? "" : styles.onlyText}`}
+        {...restProps}
+        ref={containerRef}
+      />
+      {isMobile ? (
+        <ImageViewer
+          image={previewSrc}
+          visible={previewVisible}
+          onClose={() => setPreviewVisible(false)}
+        />
+      ) : (
+        <DesktopImagePreview
+          src={previewSrc}
+          visible={previewVisible}
+          onVisibleChange={setPreviewVisible}
+        />
+      )}
+    </>
+  );
+}
+
+
+===== webpack://_N_E/./app/utils/markdown.ts =====
+
+import { isApp } from "@/app/bridge";
+import markdown from "markdown-it";
+import { shouldUseWebview } from "./url";
+
+const md = markdown({ html: true, xhtmlOut: true });
+
+// Σ┐¥τòÖΘ╗ÿΦ«ñµ╕▓µƒôσç╜µò░
+const defaultHTMLInline =
+  md.renderer.rules.html_inline ||
+  ((tokens, idx, options, env, self) => tokens[idx].content);
+const defaultHTMLBlock =
+  md.renderer.rules.html_block ||
+  ((tokens, idx, options, env, self) => tokens[idx].content);
+
+const defaultLinkOpen =
+  md.renderer.rules.link_open ||
+  ((tokens, idx, options, env, self) => self.renderToken(tokens, idx, options));
+
+// τ╗ÖσìòΣ╕¬ HTML σ¡ùτ¼ªΣ╕▓ΘçîτÜä <a> µëôΦíÑΣ╕ü
+function transformATag(html: string) {
+  return html.replace(
+    /<a([\s\S]*?)href="([\s\S]*?)"([\s\S]*?)>/gi,
+    // /<a([^>]*?)href="([^"]*)"([^>]*?)>/gi,
+    (match, before, href, after) => {
+      const newHref =
+        isApp() && !shouldUseWebview(href)
+          ? `bambulab://bbl/webview?urlString=${encodeURIComponent(href)}`
+          : href;
+      const hasTarget = /\starget\s*=/i.test(before + after);
+      const targetStr = hasTarget ? "" : ' target="_blank"';
+      return `<a${before}href="${newHref}"${after}${targetStr}>`;
+    },
+  );
+}
+
+// σñäτÉå markdown Φ»¡µ│òτöƒµêÉτÜä link_open
+md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
+  tokens[idx].attrSet("target", "_blank");
+  if (isApp()) {
+    const href = tokens[idx].attrGet("href");
+    // σÅ¬µ£ë href Σ╕ìσîàσÉ½ im τ¢╕σà│Φ╖»σ╛äµù╢µëìµö╣σåÖΣ╕║ webview σìÅΦ««
+    if (href && !shouldUseWebview(href)) {
+      tokens[idx].attrSet(
+        "href",
+        `bambulab://bbl/webview?urlString=${encodeURIComponent(href)}`,
+      );
+    }
+  }
+  return defaultLinkOpen(tokens, idx, options, env, self);
+};
+
+// σñäτÉåΦíîσåà <a>∩╝êµ»öσªéσåÖσ£¿ Markdown ΘçîτÜä <a>∩╝ë
+md.renderer.rules.html_inline = (tokens, idx, options, env, self) => {
+  // σÄƒµá╖µ╕▓µƒôΣ╕ÇΘüì∩╝îσåìσüÜµ¢┐µìó
+  const orig = defaultHTMLInline(tokens, idx, options, env, self);
+  return transformATag(orig);
+};
+
+// σñäτÉåσ¥ùτ║º <a>∩╝êτï¼τ½ïΣ╕Çµ«╡τÜä HTML∩╝ë
+md.renderer.rules.html_block = (tokens, idx, options, env, self) => {
+  const orig = defaultHTMLBlock(tokens, idx, options, env, self);
+  return transformATag(orig);
+};
+
+export default md;
+
+
+===== webpack://_N_E/./app/components/chat/modules/ChatNotice.module.scss =====
+
+// extracted by mini-css-extract-plugin
+module.exports = {"chatNotice":"ChatNotice_chatNotice__YCbAi","noticeContent":"ChatNotice_noticeContent__iEwqP","closeBtn":"ChatNotice_closeBtn__LSglY","closeIcon":"ChatNotice_closeIcon__2RA_b"};
+
+===== webpack://_N_E/./app/components/chat/modules/LineUp.module.scss =====
+
+// extracted by mini-css-extract-plugin
+module.exports = {"lineUp":"LineUp_lineUp___76ll","title":"LineUp_title__BtPRJ","mobile":"LineUp_mobile__coLLx","lineUpNum":"LineUp_lineUpNum__FB4Vf","cancel":"LineUp_cancel__dcmWk"};
+
+===== webpack://_N_E/./app/components/chat/modules/MallContextCard.module.scss =====
+
+// extracted by mini-css-extract-plugin
+module.exports = {"wrap":"MallContextCard_wrap__eOZ_w","time":"MallContextCard_time__SJwLx","card":"MallContextCard_card__Edbcz","thumbnail":"MallContextCard_thumbnail__QweEv","content":"MallContextCard_content__1ymPe","title":"MallContextCard_title__h1Ebc","subtitle":"MallContextCard_subtitle__MVQVC"};
+
+===== webpack://_N_E/./app/components/chat/modules/Satisfy.module.scss =====
+
+// extracted by mini-css-extract-plugin
+module.exports = {"feedbackContainer":"Satisfy_feedbackContainer__VqRVo","commended":"Satisfy_commended__rNOdD","resolutionBtn":"Satisfy_resolutionBtn__w5wL6","resolutionActive":"Satisfy_resolutionActive__2zvRB","star":"Satisfy_star__lBrgA","starActive":"Satisfy_starActive__pzXBF","title":"Satisfy_title__KLF16","resolved":"Satisfy_resolved__3j_Yk","unResolved":"Satisfy_unResolved__jSXXv","resolutionOptions":"Satisfy_resolutionOptions__B1ORD","ratingSection":"Satisfy_ratingSection__KC6JR","ratingTitle":"Satisfy_ratingTitle__dfGbo","starRating":"Satisfy_starRating__1JEVc","commentBox":"Satisfy_commentBox__hagel","submitBtn":"Satisfy_submitBtn__QV_0D","tips":"Satisfy_tips__4LPmX"};
+
+===== webpack://_N_E/./app/components/robot/components/AIFooterShared/Satisfy.module.scss =====
+
+// extracted by mini-css-extract-plugin
+module.exports = {"satisfyLiked":"Satisfy_satisfyLiked__DVM7E","disSatisfyReadonly":"Satisfy_disSatisfyReadonly__dXR__","satisfyDislikedShort":"Satisfy_satisfyDislikedShort__Ls3h7","satisfy":"Satisfy_satisfy__r1vm_","title":"Satisfy_title__TfbT2","options":"Satisfy_options__v4MaK","commented":"Satisfy_commented__uExI8","option":"Satisfy_option__k9k_w","active":"Satisfy_active__b4meg","icon":"Satisfy_icon__SzZjb","dislike":"Satisfy_dislike__EOdrd","disSatisfy":"Satisfy_disSatisfy__s1raH","disSatisfyPopup":"Satisfy_disSatisfyPopup__7vGZs"};
+
+===== webpack://_N_E/./app/components/chat/modules/orderIdentityCard/pushOrderIdentityCard.ts =====
+
+import { saveRobotInfo } from "@/app/api/robot/chatContent";
+import { isOrderIdentityIssueType } from "@/app/constants/orderIdentity";
+import type { QuestionList } from "@/app/hooks/useClientInit";
+import { useMessageStore } from "@/app/store";
+import {
+  CurrentChatStatus,
+  HeaderType,
+  MessageSender,
+  MessageType,
+  RobotMessageType,
+} from "@/app/store/types";
+import { tryParse } from "@/app/utils/object";
+import { createMessageClientId } from "@/app/utils/string";
+
+export type OrderIdentityVerification = {
+  verificationStatus?: string;
+};
+
+export type OrderIdentityCardPayload = {
+  issueTypeId: string;
+  issueTypeName?: string;
+  submitted?: boolean;
+  orderId?: string;
+  orderSource?: "selected" | "manual";
+  /** σìíτëçµëÇσ▒₧Σ╝ÜΦ»¥∩╝îµÅÉΣ║ñµù╢σ┐àΘí╗Σ╕Äσ╜ôσëìΣ╝ÜΦ»¥Σ╕ÇΦç┤ */
+  conversationId?: string;
+  identityVerification?: OrderIdentityVerification;
+};
+
+export function readOrderIdentityPayload(source?: {
+  content?: string | null;
+  extension?: string | null;
+}): OrderIdentityCardPayload {
+  const fromExtension = tryParse(source?.extension ?? "");
+  if (
+    fromExtension &&
+    typeof fromExtension === "object" &&
+    !Array.isArray(fromExtension)
+  ) {
+    return fromExtension as OrderIdentityCardPayload;
+  }
+  return (tryParse(source?.content ?? "") || {}) as OrderIdentityCardPayload;
+}
+
+/** ΦÉ╜σ║ôµÅÆσàÑµù╢ store ΘçîτÜäΣ╝ÜΦ»¥ ID∩╝îτö¿µ¥Ñσî║σêåΣ╕èΣ╕ÇΘÇÜµ«ïτòÖσÆîΦ┐ÖΣ╕ÇΘÇÜµû░σê░τÜä ID */
+const conversationIdAtInsert = new Map<string, string>();
+
+export function getConversationIdAtInsert(
+  messageId?: string,
+): string | undefined {
+  if (!messageId) return undefined;
+  return conversationIdAtInsert.get(messageId);
+}
+
+function resolveSavedMessageId(
+  result?: { messageId?: string | number; msgId?: string | number } | null,
+): string {
+  const raw = result?.messageId ?? result?.msgId;
+  return raw == null ? "" : String(raw).trim();
+}
+
+/**
+ * WebSocket σ╖▓Φ┐₧µÄÑσÉÄΦÉ╜σ║ô∩╝îσåìτö¿Φ┐öσ¢₧τÜäµ╢êµü» ID µÅÆσàÑΦ«óσìòσìíτëçπÇé
+ * σÉîΣ╕ÇΘù«Θóÿτ▒╗σ₧ïµ£¬µÅÉΣ║ñµù╢Σ╕ìΘçìσñìΦÉ╜σ║ôπÇé
+ */
+export async function persistAndPushOrderIdentityCard(
+  question: QuestionList,
+): Promise<void> {
+  const issueTypeId = question.id?.trim();
+  if (!issueTypeId || !isOrderIdentityIssueType(question.tags)) {
+    return;
+  }
+
+  const { msgList, chatStatus, conversationId } = useMessageStore.getState();
+  const activeConversationId = conversationId?.trim() || "";
+  const exists = msgList.some((msg) => {
+    if (msg.type !== MessageType.OrderIdentityCard || msg.disabled) {
+      return false;
+    }
+    const parsed = readOrderIdentityPayload(msg);
+    if (parsed.issueTypeId !== issueTypeId || parsed.submitted === true) {
+      return false;
+    }
+    if (chatStatus === CurrentChatStatus.ChatEnd) return false;
+    const cardConversationId = (
+      msg.conversationId ||
+      parsed.conversationId ||
+      ""
+    ).trim();
+    if (
+      cardConversationId &&
+      activeConversationId &&
+      cardConversationId !== activeConversationId
+    ) {
+      return false;
+    }
+    return true;
+  });
+  if (exists) {
+    return;
+  }
+
+  // σ╗║Φ┐₧µêÉσèƒτ₧¼Θù┤ store ΘçîσñÜσìèΦ┐ÿµÿ»Σ╕èΣ╕ÇΘÇÜΣ╝ÜΦ»¥τÜä ID∩╝îΣ╕ìΦâ╜σåÖσê░Φ┐Öσ╝áµû░σìíτëçΣ╕èπÇé
+  // σìíτëçσ£¿Σ╝ÜΦ»¥τ£ƒµ¡úσ╝ÇσºïσÉÄσåìτ╗æσ«Üσ╜ôσëì conversationIdπÇé
+  const payload: OrderIdentityCardPayload = {
+    issueTypeId,
+    issueTypeName: question.issueTypeName ?? "",
+    submitted: false,
+  };
+  const clientId = createMessageClientId();
+  const clientTimestamp = Date.now();
+  const extension = JSON.stringify(payload);
+  const savedList = await saveRobotInfo([
+    {
+      clientId,
+      clientTimestamp,
+      content: "",
+      senderType: MessageSender.ROBOT,
+      type: MessageType.OrderIdentityCard,
+      extension,
+    },
+  ]);
+  const saved =
+    savedList?.find((item) => item.clientId === clientId) ?? savedList?.[0];
+  const messageId = resolveSavedMessageId(saved);
+  if (!messageId || saved?.success === false) {
+    throw new Error("order identity card save missing messageId");
+  }
+  conversationIdAtInsert.set(messageId, activeConversationId);
+
+  useMessageStore.getState().setRobotMessage({
+    id: messageId,
+    clientId,
+    type: MessageType.OrderIdentityCard,
+    headerType: HeaderType.MESSAGE,
+    senderType: MessageSender.ROBOT,
+    messageType: RobotMessageType.ROBOT_NORMAL_REPLY,
+    content: "",
+    extension,
+    timestamp: clientTimestamp,
+    senderName: "µÖ║Φâ╜σè⌐µëï",
+    robotData: {},
+  });
+}
+
+
+===== webpack://_N_E/./app/utils/mallCardEntry.ts =====
+
+import { createMallCardSnapshot } from "@/app/api/mallCard";
+import { authService } from "@/app/services/AuthService";
+import { useMessageStore } from "@/app/store";
+import {
+  HeaderType,
+  MessageSender,
+  MessageType,
+  RobotMessageType,
+} from "@/app/store/types";
+import { createMessageClientId } from "@/app/utils/string";
+
+const MALL_CARD_QUERY_KEYS = ["contextType", "businessId", "product"] as const;
+
+interface MallCardQuery {
+  cardType: "product" | "order";
+  businessId?: string;
+  orderNo?: string;
+  product?: string;
+}
+
+export const getMallWsContextFromUrl = (
+  searchParams?: URLSearchParams,
+): {
+  contextType: "product" | "order";
+  businessId: string;
+  product?: string;
+} | null => {
+  if (typeof window === "undefined") return null;
+  const params =
+    searchParams ?? new URLSearchParams(window.location.search || "");
+  const contextType = params.get("contextType")?.trim().toUpperCase();
+  const businessId = params.get("businessId")?.trim();
+  const product = params.get("product")?.trim() || undefined;
+  if ((contextType !== "PRODUCT" && contextType !== "ORDER") || !businessId) {
+    return null;
+  }
+  return {
+    contextType: contextType === "ORDER" ? "order" : "product",
+    businessId,
+    ...(product && { product }),
+  };
+};
+
+const readQuery = (searchParams: URLSearchParams): MallCardQuery | null => {
+  const contextType = searchParams.get("contextType")?.trim().toUpperCase();
+  if (contextType !== "PRODUCT" && contextType !== "ORDER") {
+    return null;
+  }
+
+  const businessId = searchParams.get("businessId")?.trim() || undefined;
+  const product = searchParams.get("product")?.trim() || undefined;
+  if (!businessId) return null;
+  if (contextType === "ORDER") {
+    return {
+      cardType: "order",
+      businessId,
+      ...(product && { product }),
+    };
+  }
+  return {
+    cardType: "product",
+    businessId,
+    ...(product && { product }),
+  };
+};
+
+export const clearMallContextQuery = () => {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  let changed = false;
+  MALL_CARD_QUERY_KEYS.forEach((key) => {
+    if (url.searchParams.has(key)) {
+      url.searchParams.delete(key);
+      changed = true;
+    }
+  });
+  if (changed) {
+    window.history.replaceState({}, document.title, url.toString());
+  }
+};
+
+/**
+ * σÉîΣ╕ÇΣ╕¬πÇîσç║σìíµäÅσ¢╛πÇìσñìτö¿σÉîΣ╕ÇΣ╕¬ clientId∩╝Üσê╖µû░µ£¬µ╕àσÅéµù╢σÉÄτ½»σÅ»µîë clientId σêñΘçì∩╝î
+ * Σ╕ìΣ╝Üσ£¿Φüèσñ⌐Φ«░σ╜òΘçîΦÉ╜τ¼¼Σ║îµ¥íσìíτëçπÇé
+ */
+const getClientId = (query: MallCardQuery) => {
+  const storageKey = `mall_card_snapshot_client_id:${JSON.stringify(query)}`;
+  const stored = sessionStorage.getItem(storageKey);
+  if (stored) return { clientId: stored, storageKey };
+
+  const clientId = `mall-${query.cardType}-${createMessageClientId()}`;
+  sessionStorage.setItem(storageKey, clientId);
+  return { clientId, storageKey };
+};
+
+const hasRenderedCard = (clientId: string) => {
+  const { historyMsgList, msgList } = useMessageStore.getState();
+  return [...historyMsgList, ...msgList].some(
+    (item) => item.clientId === clientId,
+  );
+};
+
+/**
+ * σòåσƒÄσ╕ªσÅéΦ┐¢τ║┐σç║σìí∩╝ÜΦºúµ₧É URL Σ╕èΣ╕ïµûç ΓåÆ Φ░â snapshot ΓåÆ µÅÆσàÑσìíτëçµ░öµ│í ΓåÆ µ╕àµÄëµ£¼µ¼íτö¿Φ┐çτÜä queryπÇé
+ * Φ»╖µ▒éσñ▒Φ┤Ñµù╢Σ┐¥τòÖ query Σ╕Ä clientId∩╝îΣ╛┐Σ║Äτö¿µê╖σê╖µû░ΘçìΦ»òπÇé
+ */
+export const renderMallCardFromUrl = async (
+  searchParams?: URLSearchParams,
+): Promise<void> => {
+  if (typeof window === "undefined") return;
+  // µ£¬τÖ╗σ╜òΣ╕ìΦ░âµÄÑσÅúπÇüΣ╣ƒΣ╕ìµ╕àσÅé∩╝êτÖ╗σ╜òσ¢₧Φ╖│σÉÄΣ╗ìΘ£Çσ╕ªτ¥ÇΣ╕èΣ╕ïµûçσç║σìí∩╝ë
+  if (!authService.getToken()) return;
+
+  const params =
+    searchParams ?? new URLSearchParams(window.location.search || "");
+  const query = readQuery(params);
+  if (!query) return;
+  const { clientId, storageKey } = getClientId(query);
+  if (hasRenderedCard(clientId)) {
+    clearMallContextQuery();
+    sessionStorage.removeItem(storageKey);
+    return;
+  }
+
+  try {
+    const card = await createMallCardSnapshot({ ...query, clientId });
+    const responseClientId = card.clientId || clientId;
+    if (!hasRenderedCard(responseClientId)) {
+      useMessageStore.getState().setRobotMessage({
+        clientId: responseClientId,
+        type:
+          card.cardType === "product"
+            ? MessageType.MallProductCard
+            : MessageType.MallOrderCard,
+        headerType: HeaderType.MESSAGE,
+        senderType: MessageSender.ROBOT,
+        messageType: RobotMessageType.ROBOT_NORMAL_REPLY,
+        content: card.cardType === "product" ? "σòåσôüσìíτëç" : "Φ«óσìòσìíτëç",
+        extension: JSON.stringify(card),
+        timestamp: Date.now(),
+        senderName: "µÖ║Φâ╜σè⌐µëï",
+        robotData: {},
+      });
+    }
+    clearMallContextQuery();
+    sessionStorage.removeItem(storageKey);
+  } catch (error) {
+    console.error("[MallCard] snapshot failed:", error);
+  }
+};
+
+
+===== webpack://_N_E/./app/utils/url.ts =====
+
+import { isApp } from "@/app/bridge";
+import { ExternalFromSource, MUST_LOGIN_FROM_SOURCES } from "@/app/constants";
+
+/**
+ * Σ┐«µö╣ URL Σ╕¡τÜäµîçσ«ÜσÅéµò░σÇ╝
+ * @param url σÄƒσºï URL σ¡ùτ¼ªΣ╕▓
+ * @param key ΦªüΣ┐«µö╣τÜäσÅéµò░σÉì
+ * @param value µû░τÜäσÅéµò░σÇ╝∩╝êµö»µîüσ¡ùτ¼ªΣ╕▓πÇüµò░σ¡ùπÇüσ╕âσ░öσÇ╝∩╝ë
+ * @returns Σ┐«µö╣σÉÄτÜäσ«îµò┤ URL σ¡ùτ¼ªΣ╕▓
+ */
+export function updateUrlParameter(
+  url: string,
+  key: string,
+  value: string | number | boolean,
+): string {
+  // Φºúµ₧ÉσÄƒσºï URL
+  const urlObj = new URL(url);
+
+  // σê¢σ╗║ URLSearchParams σ»╣Φ▒íσñäτÉåµƒÑΦ»óσÅéµò░
+  const params = new URLSearchParams(urlObj.search);
+
+  // ΦïÑσÅéµò░σ¡ÿσ£¿σêÖµ¢┤µû░σÇ╝∩╝êΘ£ÇΦ╜¼µìóΣ╕║σ¡ùτ¼ªΣ╕▓∩╝ë
+  if (params.has(key)) {
+    params.set(key, String(value));
+
+    // µ¢┤µû░ URL τÜäµƒÑΦ»óσÅéµò░Θâ¿σêå
+    urlObj.search = params.toString();
+
+    // Φ┐öσ¢₧σ«îµò┤µû░ URL∩╝êσîàσÉ½σÅ»Φâ╜τÜä hash Θâ¿σêå∩╝ë
+    return urlObj.toString();
+  }
+
+  // σÅéµò░Σ╕ìσ¡ÿσ£¿µù╢τ¢┤µÄÑΦ┐öσ¢₧σÄƒ URL
+  return url;
+}
+
+export function removeQueryParam(
+  paramName: string | string[],
+  customUrl?: string,
+): void {
+  // ΦÄ╖σÅûσ╜ôσëìURLµêûΣ╜┐τö¿Φç¬σ«ÜΣ╣ëURL
+  const currentUrl = customUrl || window.location.href;
+
+  // σê¢σ╗║URLσ»╣Φ▒í
+  const urlObj = new URL(currentUrl);
+
+  // σêáΘÖñµîçσ«ÜτÜäµƒÑΦ»óσÅéµò░
+  if (typeof paramName === "string") {
+    urlObj.searchParams.delete(paramName);
+  } else if (Array.isArray(paramName)) {
+    paramName.forEach((name) => {
+      urlObj.searchParams.delete(name);
+    });
+  }
+
+  // Σ╜┐τö¿history.replaceStateµ¢┤µû░URLΦÇîΣ╕ìσê╖µû░Θí╡Θ¥ó
+  window.history.replaceState({}, document.title, urlObj.toString());
+}
+
+/**
+ * σêñµû¡ href µÿ»σÉªσîàσÉ½ im τ¢╕σà│Φ╖»σ╛ä∩╝êΦ┐ÖΣ║¢Φ╖»σ╛äΣ╕ìΘ£ÇΦªüµö╣σåÖΣ╕║ webview σìÅΦ««∩╝ë
+ */
+export function shouldUseWebview(href: string): boolean {
+  return (
+    href.includes("/cn/im") ||
+    href.includes("/en/im") ||
+    href.includes("/im") ||
+    href.includes("/im/") ||
+    href.includes("/liveChat/")
+  );
+}
+
+/**
+ * σ░åµûçµ£¼Σ╕¡τÜäΦú╕ URL Φ╜¼µìóΣ╕║σÅ»τé╣σç╗τÜä <a> µáçτ¡╛∩╝îσà╝σ«╣σ»îµûçµ£¼∩╝êΣ╕ìτá┤σ¥Åσ╖▓µ£ë HTML µáçτ¡╛σÆîΘô╛µÄÑ∩╝ë
+ * App τ½»Σ╝Üσ░å href µö╣σåÖΣ╕║ bambulab webview σìÅΦ««
+ * @param text σÅ»Φâ╜σîàσÉ½ HTML τÜäµûçµ£¼
+ * @returns σñäτÉåσÉÄτÜäµûçµ£¼
+ */
+export function validIsALink(text: string) {
+  if (!text) return text;
+
+  const urlRegex =
+    /(https?:\/\/[^\s\u4E00-\u9FFF\u3000-\u303F\uFF00-\uFFEF]+)/gi;
+  const htmlTagRegex = /(<[^>]+>)/g;
+  const parts = text.split(htmlTagRegex);
+  const appMode = isApp();
+
+  let insideAnchor = false;
+
+  return parts
+    .map((part) => {
+      if (part.startsWith("<") && part.endsWith(">")) {
+        if (/^<a[\s>]/i.test(part)) {
+          insideAnchor = true;
+        } else if (/^<\/a\s*>/i.test(part)) {
+          insideAnchor = false;
+        }
+        return part;
+      }
+      if (insideAnchor) return part;
+      return part.replace(urlRegex, (_match, url) => {
+        const href = url;
+        return `<a href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+      });
+    })
+    .join("");
+}
+
+export function getUrlParams(): URLSearchParams {
+  // τí«Σ┐¥σ£¿σ«óµê╖τ½»τÄ»σóâµëºΦíî
+  if (typeof window === "undefined") {
+    return new URLSearchParams();
+  }
+
+  return new URLSearchParams(window.location.search);
+}
+
+export function getUrlParam(name: string): string | null {
+  const params = getUrlParams();
+  return params.get(name);
+}
+
+/**
+ * Φ»╗σÅû URL σÅéµò░ `from`∩╝îσ╜ÆΣ╕ÇσîûΣ╕║σ╖▓τƒÑτÜäµ¥Ñµ║Éµ₧ÜΣ╕╛∩╝¢µ£¬τƒÑµêûτ╝║τ£üΦ┐öσ¢₧ nullπÇé
+ */
+export function getExternalFromSource(): ExternalFromSource | null {
+  const raw = getUrlParam("from");
+  if (!raw) return null;
+  const num = Number(raw);
+  if (!Number.isInteger(num)) return null;
+  const known = Object.values(ExternalFromSource).filter(
+    (v): v is number => typeof v === "number",
+  );
+  return known.includes(num) ? (num as ExternalFromSource) : null;
+}
+
+/**
+ * σ╜ôσëìΦ┐¢σàÑµ¥Ñµ║Éµÿ»σÉªΦªüµ▒éσ╝║σê╢τÖ╗σ╜ò∩╝êσªéσòåσƒÄ `from=6` Φ╖│σàÑ∩╝ëπÇé
+ */
+export function isMustLoginFromSource(): boolean {
+  const from = getExternalFromSource();
+  return from !== null && MUST_LOGIN_FROM_SOURCES.has(from);
+}
+
+export function getAllUrlParams(): Record<string, string> {
+  const params = getUrlParams();
+  const result: Record<string, string> = {};
+
+  params.forEach((value, key) => {
+    result[key] = value;
+  });
+
+  return result;
+}
+
+export const isValidUrl = (url: string): boolean => {
+  try {
+    if (!url) return false;
+    const parsedUrl = new URL(url);
+    // Only allow http and https protocols
+    return ["http:", "https:"].includes(parsedUrl.protocol.toLowerCase());
+  } catch (e) {
+    // If URL parsing fails, it's likely not a valid URL
+    return false;
+  }
+};
+
+
+===== webpack://_N_E/./app/utils/url.ts =====
+
+import { isApp } from "@/app/bridge";
+import { ExternalFromSource, MUST_LOGIN_FROM_SOURCES } from "@/app/constants";
+
+/**
+ * Σ┐«µö╣ URL Σ╕¡τÜäµîçσ«ÜσÅéµò░σÇ╝
+ * @param url σÄƒσºï URL σ¡ùτ¼ªΣ╕▓
+ * @param key ΦªüΣ┐«µö╣τÜäσÅéµò░σÉì
+ * @param value µû░τÜäσÅéµò░σÇ╝∩╝êµö»µîüσ¡ùτ¼ªΣ╕▓πÇüµò░σ¡ùπÇüσ╕âσ░öσÇ╝∩╝ë
+ * @returns Σ┐«µö╣σÉÄτÜäσ«îµò┤ URL σ¡ùτ¼ªΣ╕▓
+ */
+export function updateUrlParameter(
+  url: string,
+  key: string,
+  value: string | number | boolean,
+): string {
+  // Φºúµ₧ÉσÄƒσºï URL
+  const urlObj = new URL(url);
+
+  // σê¢σ╗║ URLSearchParams σ»╣Φ▒íσñäτÉåµƒÑΦ»óσÅéµò░
+  const params = new URLSearchParams(urlObj.search);
+
+  // ΦïÑσÅéµò░σ¡ÿσ£¿σêÖµ¢┤µû░σÇ╝∩╝êΘ£ÇΦ╜¼µìóΣ╕║σ¡ùτ¼ªΣ╕▓∩╝ë
+  if (params.has(key)) {
+    params.set(key, String(value));
+
+    // µ¢┤µû░ URL τÜäµƒÑΦ»óσÅéµò░Θâ¿σêå
+    urlObj.search = params.toString();
+
+    // Φ┐öσ¢₧σ«îµò┤µû░ URL∩╝êσîàσÉ½σÅ»Φâ╜τÜä hash Θâ¿σêå∩╝ë
+    return urlObj.toString();
+  }
+
+  // σÅéµò░Σ╕ìσ¡ÿσ£¿µù╢τ¢┤µÄÑΦ┐öσ¢₧σÄƒ URL
+  return url;
+}
+
+export function removeQueryParam(
+  paramName: string | string[],
+  customUrl?: string,
+): void {
+  // ΦÄ╖σÅûσ╜ôσëìURLµêûΣ╜┐τö¿Φç¬σ«ÜΣ╣ëURL
+  const currentUrl = customUrl || window.location.href;
+
+  // σê¢σ╗║URLσ»╣Φ▒í
+  const urlObj = new URL(currentUrl);
+
+  // σêáΘÖñµîçσ«ÜτÜäµƒÑΦ»óσÅéµò░
+  if (typeof paramName === "string") {
+    urlObj.searchParams.delete(paramName);
+  } else if (Array.isArray(paramName)) {
+    paramName.forEach((name) => {
+      urlObj.searchParams.delete(name);
+    });
+  }
+
+  // Σ╜┐τö¿history.replaceStateµ¢┤µû░URLΦÇîΣ╕ìσê╖µû░Θí╡Θ¥ó
+  window.history.replaceState({}, document.title, urlObj.toString());
+}
+
+/**
+ * σêñµû¡ href µÿ»σÉªσîàσÉ½ im τ¢╕σà│Φ╖»σ╛ä∩╝êΦ┐ÖΣ║¢Φ╖»σ╛äΣ╕ìΘ£ÇΦªüµö╣σåÖΣ╕║ webview σìÅΦ««∩╝ë
+ */
+export function shouldUseWebview(href: string): boolean {
+  return (
+    href.includes("/cn/im") ||
+    href.includes("/en/im") ||
+    href.includes("/im") ||
+    href.includes("/im/") ||
+    href.includes("/liveChat/")
+  );
+}
+
+/**
+ * σ░åµûçµ£¼Σ╕¡τÜäΦú╕ URL Φ╜¼µìóΣ╕║σÅ»τé╣σç╗τÜä <a> µáçτ¡╛∩╝îσà╝σ«╣σ»îµûçµ£¼∩╝êΣ╕ìτá┤σ¥Åσ╖▓µ£ë HTML µáçτ¡╛σÆîΘô╛µÄÑ∩╝ë
+ * App τ½»Σ╝Üσ░å href µö╣σåÖΣ╕║ bambulab webview σìÅΦ««
+ * @param text σÅ»Φâ╜σîàσÉ½ HTML τÜäµûçµ£¼
+ * @returns σñäτÉåσÉÄτÜäµûçµ£¼
+ */
+export function validIsALink(text: string) {
+  if (!text) return text;
+
+  const urlRegex =
+    /(https?:\/\/[^\s\u4E00-\u9FFF\u3000-\u303F\uFF00-\uFFEF]+)/gi;
+  const htmlTagRegex = /(<[^>]+>)/g;
+  const parts = text.split(htmlTagRegex);
+  const appMode = isApp();
+
+  let insideAnchor = false;
+
+  return parts
+    .map((part) => {
+      if (part.startsWith("<") && part.endsWith(">")) {
+        if (/^<a[\s>]/i.test(part)) {
+          insideAnchor = true;
+        } else if (/^<\/a\s*>/i.test(part)) {
+          insideAnchor = false;
+        }
+        return part;
+      }
+      if (insideAnchor) return part;
+      return part.replace(urlRegex, (_match, url) => {
+        const href = url;
+        return `<a href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+      });
+    })
+    .join("");
+}
+
+export function getUrlParams(): URLSearchParams {
+  // τí«Σ┐¥σ£¿σ«óµê╖τ½»τÄ»σóâµëºΦíî
+  if (typeof window === "undefined") {
+    return new URLSearchParams();
+  }
+
+  return new URLSearchParams(window.location.search);
+}
+
+export function getUrlParam(name: string): string | null {
+  const params = getUrlParams();
+  return params.get(name);
+}
+
+/**
+ * Φ»╗σÅû URL σÅéµò░ `from`∩╝îσ╜ÆΣ╕ÇσîûΣ╕║σ╖▓τƒÑτÜäµ¥Ñµ║Éµ₧ÜΣ╕╛∩╝¢µ£¬τƒÑµêûτ╝║τ£üΦ┐öσ¢₧ nullπÇé
+ */
+export function getExternalFromSource(): ExternalFromSource | null {
+  const raw = getUrlParam("from");
+  if (!raw) return null;
+  const num = Number(raw);
+  if (!Number.isInteger(num)) return null;
+  const known = Object.values(ExternalFromSource).filter(
+    (v): v is number => typeof v === "number",
+  );
+  return known.includes(num) ? (num as ExternalFromSource) : null;
+}
+
+/**
+ * σ╜ôσëìΦ┐¢σàÑµ¥Ñµ║Éµÿ»σÉªΦªüµ▒éσ╝║σê╢τÖ╗σ╜ò∩╝êσªéσòåσƒÄ `from=6` Φ╖│σàÑ∩╝ëπÇé
+ */
+export function isMustLoginFromSource(): boolean {
+  const from = getExternalFromSource();
+  return from !== null && MUST_LOGIN_FROM_SOURCES.has(from);
+}
+
+export function getAllUrlParams(): Record<string, string> {
+  const params = getUrlParams();
+  const result: Record<string, string> = {};
+
+  params.forEach((value, key) => {
+    result[key] = value;
+  });
+
+  return result;
+}
+
+export const isValidUrl = (url: string): boolean => {
+  try {
+    if (!url) return false;
+    const parsedUrl = new URL(url);
+    // Only allow http and https protocols
+    return ["http:", "https:"].includes(parsedUrl.protocol.toLowerCase());
+  } catch (e) {
+    // If URL parsing fails, it's likely not a valid URL
+    return false;
+  }
+};
+

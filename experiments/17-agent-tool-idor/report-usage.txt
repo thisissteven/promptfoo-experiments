@@ -1,0 +1,72 @@
+﻿
+### webpack://_N_E/./app/store/complaintList.ts
+12 /** µèòΦ»ëσÄƒσ¢á id∩╝îΣ╕Ä DEFAULT_COMPLAINT_LISTπÇüµÄÑσÅú reportReason Σ╕ÇΦç┤ */
+22 reportDetailKey: ComplaintReportDetailKey;
+29 reportDetailKey: "complaintReportOptionAbuse",
+33 reportDetailKey: "complaintReportOptionIllegal",
+37 reportDetailKey: "complaintReportOptionPrivacyRelated",
+41 reportDetailKey: "complaintReportOptionOther",
+
+### webpack://_N_E/./app/store/types.ts
+535 /** τé╣Φ╡₧∩╝ÜfeedbackClass Σ╕Ä FeedbackTypeEnum.like∩╝ê1∩╝ëΣ╕ÇΦç┤ */
+537 feedbackClass: FeedbackTypeEnum.like;
+542 * τé╣Φ╕⌐∩╝ÜfeedbackClass Σ╕Ä FeedbackTypeEnum.dislike∩╝ê2∩╝ëΣ╕ÇΦç┤
+547 feedbackClass: FeedbackTypeEnum.dislike;
+563 const v = (f as { feedbackClass?: unknown }).feedbackClass;
+586 * Σ╛ï∩╝Ü'{"feedback":{"feedbackClass":2,"feedbackContent":"...","feedbackType":40,"updatedAt":""}}'
+
+### webpack://_N_E/./app/components/chat/MessageItem.tsx
+118 <div className={styles.messageContentContainer}>
+119 <div className={styles.messageContent} data-msg-type={msg.type}>
+209 className={`${styles.messageContentContainer} ${msg.msgClassName ? styles[msg.msgClassName] : ""}`}
+237 className={`${styles.messageContent} ${[MessageType.Video, MessageType.Audio, MessageType.Image].includes(msg.type as MessageType) && !isForbiddenMsg(msg) ? styles.file : ""}`}
+
+### webpack://_N_E/./app/components/robot/components/AIFooterShared/useAIFooterFeedback.ts
+14 questionFeedback,
+86 feedbackClass: FeedbackTypeEnum.like,
+96 await questionFeedback(params);
+
+### webpack://_N_E/./app/components/robot/components/aiFeedback/index.tsx
+6 questionFeedback,
+148 feedbackClass:
+162 questionFeedback(params).then(() => {
+
+### webpack://_N_E/./app/components/robot/components/AIFooterShared/Complaint.tsx
+21 import { msgComplaint } from "@/app/api/chatContent";
+33 messageContent?: string;
+45 messageContent,
+131 await msgComplaint({
+134 reportReason: selectedOption.id,
+135 reportDetail: selectedOption.useReason ? reasonText : "",
+147 console.error("msgComplaint failed:", error);
+199 item.reportDetailKey as keyof typeof t.aiFeedback
+200 ] as string | undefined) ?? item.reportDetailKey;
+230 item.reportDetailKey as keyof typeof t.aiFeedback
+231 ] as string | undefined) ?? item.reportDetailKey;
+
+### webpack://_N_E/./app/components/robot/components/AIFooterShared/AIFooter.tsx
+189 messageContent={content}
+
+### webpack://_N_E/./app/components/robot/components/feedFooter/index.tsx
+12 reportReason: number;
+13 reportDetail: string;
+
+### webpack://_N_E/./app/components/robot/robotMessageItem/index.tsx
+348 <div className={styles.messageContentContainer} ref={contentRef}>
+350 className={styles.messageContent}
+
+### webpack://_N_E/./app/components/chat/MessageItem.module.scss
+2 module.exports = {"message":"MessageItem_message__YPgmk","service":"MessageItem_service__PjRA6","messageInfo":"MessageItem_messageInfo__3ooF2","messageContent":"MessageItem_messageContent__tvT1j","user":"MessageItem_user__c_4vC","messageHea
+
+### webpack://_N_E/./app/components/robot/robotMessageItem/index.module.scss
+2 module.exports = {"robotMessage":"robotMessageItem_robotMessage__AV39Y","service":"robotMessageItem_service__vC_tN","messageInfo":"robotMessageItem_messageInfo__vZJ_e","messageContent":"robotMessageItem_messageContent__eAFFG","messageSender
+
+### webpack://_N_E/./app/api/chatContent.ts
+96 reportReason: number;
+97 reportDetail: string;
+98 messageContent?: string;
+104 export const msgComplaint = async (params: MsgComplaintProps) => {
+
+### webpack://_N_E/./app/api/robot/chatContent.ts
+20 feedbackClass?: FeedbackTypeEnum;
+26 export const questionFeedback = async (params: FeedbackPropsType) => {

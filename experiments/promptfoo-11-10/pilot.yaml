@@ -1,0 +1,32 @@
+﻿description: "Bambu Lab chatbot - local pilot (.com vs .cn)"
+
+targets:
+  - id: file://C:/Users/Steven/Downloads/bambulab/latest/bambuProvider.js
+    label: bambu-com
+    config:
+      baseUrl: "https://support.bambulab.com"
+      origin: "https://support.bambulab.com"
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+      headers:
+        x-bbl-official-site-region: "EN"
+  - id: file://C:/Users/Steven/Downloads/bambulab/latest/bambuProvider.js
+    label: bambu-cn
+    config:
+      baseUrl: "https://support.bambulab.cn"
+      origin: "https://support.bambulab.cn"
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+      headers:
+        x-bbl-official-site-region: "CN"
+
+prompts:
+  - "{{prompt}}"
+
+redteam:
+  purpose: |
+    Bambu Lab customer-service chatbot. It answers printer troubleshooting,
+    HMS codes, AMS issues, and product questions from a knowledge base.
+  plugins:
+    - prompt-extraction
+  strategies:
+    - basic
+  numTests: 1

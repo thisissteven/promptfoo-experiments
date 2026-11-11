@@ -1,0 +1,293 @@
+﻿
+===== webpack://_N_E/./app/components/robot/components/aiFeedback/index.tsx =====
+
+"use client";
+//css
+import styles from "./index.module.scss";
+import {
+  queryFeedbackConfig,
+  questionFeedback,
+  FeedbackPropsType,
+} from "@/app/api/robot/chatContent";
+// view
+import { Button, Form, Input, Radio, Space, Spin } from "antd";
+import { useState, useEffect, useMemo } from "react";
+import { ReportParentContentEnum } from "@/app/types/typeConfig/report";
+import {
+  IMConfigTypeEnum,
+  FeedbackTypeEnum,
+} from "@/app/types/typeConfig/chatQuestion";
+// ts
+import { useTranslations, useCurrentLocale } from "@/app/locales";
+import { AIAnswerKnowledgeId } from "@/const/issueType";
+import { getRequestOrigin } from "@/app/utils/requestOrigin";
+import { useCurrentUser } from "@/app/lib/AuthProvider";
+import { createSessionId, createClientUUid } from "@/app/utils/string";
+import { useMessageStore } from "@/app/store";
+
+/** τé╣Φ╡₧τ¡ëσ£║µÖ»∩╝ÜΘÇëΣ╕¡Φ»Ñ feedbackType µù╢∩╝îΦíÑσààΦ»┤µÿÄΣ╕║σ┐àσí½ */
+const FEEDBACK_TYPE_DETAIL_REQUIRED = 1000;
+
+type FeedbackProps = {
+  streamingId?: string;
+  fromClassName?: string;
+  templateProps?: {
+    likeOrDislike: "like" | "dislike";
+    requestId?: string;
+  };
+  parentContentInfo?: {
+    parentContentId: string;
+    parentContent: string;
+    parentContentType: ReportParentContentEnum;
+  };
+  type?: "button" | "default";
+  /** µÅÉΣ║ñσÅìΘªêσÉÄΦÄ╖σÅûσ¢₧σñìµ¿íµ¥┐τÜäΘàìτ╜«τ▒╗σ₧ï∩╝îΘ╗ÿΦ«ñΣ╕║ techAiFAQ */
+  configType?: IMConfigTypeEnum;
+  onSubmit?: () => void;
+  /** Σ╗àσ▒òτñ║σ╖▓µÅÉΣ║ñτÜäτé╣Φ╕⌐µò░µì«∩╝êΣ╕ÄΣ║ñΣ║ÆµÇüσÉîΣ╕ÇσÑùΦí¿σìòσ╕âσ▒Ç∩╝îΣ╕ìσÅ»τ╝ûΦ╛æ∩╝ë */
+  readOnly?: boolean;
+  readonlyInitial?: {
+    feedbackType: number;
+    feedback: string;
+    knowledgeId?: string;
+  };
+  /** σÅìΘªêσæ╜Σ╕¡τÜäτƒÑΦ»åσ║ôΘù«Θóÿ id∩╝¢Σ╕ìΣ╝áΘ╗ÿΦ«ñΦ╡░ AI σ£║µÖ»σ╕╕ΘçÅ */
+  knowledgeId?: string;
+  /** σÅìΘªêµ¥Ñµ║É∩╝ÜFAQ τ¢┤σç║σ¢₧τ¡öΣ╝á "faq"∩╝¢Σ╕ìΣ╝áΦ╡░σ¡ÿΘçÅσñºµ¿íσ₧ïΘÇ╗Φ╛æ */
+  messageSource?: string;
+};
+
+export default function Feedback({
+  streamingId,
+  fromClassName,
+  templateProps,
+  parentContentInfo,
+  configType = IMConfigTypeEnum.techAiFAQ,
+  type = "default",
+  onSubmit,
+  readOnly = false,
+  readonlyInitial,
+  knowledgeId,
+  messageSource,
+}: FeedbackProps) {
+  const t = useTranslations();
+  const _lng = useCurrentLocale();
+  const user = useCurrentUser();
+  const { setRobotMessage } = useMessageStore();
+  const isLike = templateProps?.likeOrDislike === "like";
+  const reply = t.aiFeedback.thanksAIFeedback;
+  const reasonOptions = [
+    { value: 2000, label: t.aiFeedback["2000"] },
+    { value: 2001, label: t.aiFeedback["2001"] },
+    { value: 2002, label: t.aiFeedback["2002"] },
+    { value: 2003, label: t.aiFeedback["2003"] },
+    { value: 2004, label: t.aiFeedback["2004"] },
+    { value: 2006, label: t.aiFeedback["2006"] },
+  ];
+  const [form] = Form.useForm();
+  const watchedFeedbackType = Form.useWatch("feedbackType", form) as
+    | number
+    | undefined;
+  const [spinning, setSpinning] = useState(false);
+  const [submit, setSubmit] = useState(false);
+  const [feedbackContent, setFeedbackContent] = useState<string>("");
+  const isDislike = templateProps?.likeOrDislike === "dislike";
+  /** σÅ¬Φ»╗σ¢₧µÿ╛∩╝Üσ╖«Φ»äΣ╗àσ▒òτñ║ feedback µûçµíê∩╝îΣ╕ìσÉ½ knowledgeId */
+  const readonlyFeedbackText = useMemo(() => {
+    if (!readOnly || !readonlyInitial) return "";
+    return readonlyInitial.feedback?.trim() ?? "";
+  }, [readOnly, readonlyInitial?.feedback]);
+
+  /** τé╣Φ╕⌐ / τé╣Φ╡₧σ¥çσ▒òτñ║ΦíÑσààΦ»┤µÿÄ∩╝¢τé╣Φ╕⌐Σ╕ìΣ╛¥Φ╡ûπÇîσà╢Σ╗ûπÇìτ▒╗ΘÇëΘí╣ */
+  const showFeedbackTextArea = isLike || isDislike;
+  /** τé╣Φ╕⌐µ£¬ΘÇëσÄƒσ¢áµù╢Σ╕ìσÅ»µÅÉΣ║ñ∩╝¢τé╣Φ╡₧µùá radio∩╝îσºïτ╗êσÅ»τé╣µÅÉΣ║ñ */
+  const submitBlocked = isDislike && watchedFeedbackType === undefined;
+
+  useEffect(() => {
+    if (readOnly) return;
+    const params = {
+      languageCode: _lng,
+      type: IMConfigTypeEnum.feedback,
+    };
+    queryFeedbackConfig(params)
+      .then((res) => {
+        setSpinning(false);
+        const { content = "", content2 = "" } = res || {};
+        const _content = isLike ? content : content2;
+        setFeedbackContent(_content || reply);
+      })
+      .finally(() => setSpinning(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readOnly]);
+
+  useEffect(() => {
+    if (readOnly && readonlyInitial) {
+      form.setFieldsValue({
+        feedbackType: readonlyInitial.feedbackType,
+        feedback: readonlyFeedbackText,
+      });
+    }
+  }, [readOnly, readonlyInitial?.feedbackType, readonlyFeedbackText, form]);
+
+  const handleSubmit = (values: {
+    feedback?: string;
+    feedbackType?: number;
+  }) => {
+    if (readOnly || submit) return;
+    const rawFeedback = values.feedback ?? "";
+    const feedbackType = values.feedbackType;
+    /** Σ╕èµèÑσƒïτé╣∩╝Üτé╣Φ╕⌐Θ¥₧πÇîσà╢Σ╗ûπÇìµù╢ extendField2 Σ╗ìτö¿ΘÇëΘí╣µûçµíê */
+    const feedbackForReport = isLike
+      ? rawFeedback
+      : feedbackType === FEEDBACK_TYPE_DETAIL_REQUIRED
+        ? rawFeedback
+        : "";
+    setSubmit(true);
+    const item = reasonOptions.find((item) => item.value === feedbackType);
+
+    const sessionId = createSessionId();
+    const params: FeedbackPropsType = {
+      userId: user?.cusId || sessionId,
+      feedbackClass:
+        templateProps?.likeOrDislike === "like"
+          ? FeedbackTypeEnum.like
+          : FeedbackTypeEnum.dislike,
+      feedbackType,
+      /** /robot/front/feedback τÜä feedback∩╝ÜΣ╕ÄΦí¿σìò TextArea µÅÉΣ║ñσåàσ«╣Σ╕ÇΦç┤ */
+      feedback: rawFeedback,
+      knowledgeId: knowledgeId || AIAnswerKnowledgeId,
+      sessionId,
+      origin: getRequestOrigin(),
+      requestId: templateProps?.requestId || "",
+      extendField4: streamingId || "",
+      ...(messageSource ? { messageSource } : {}),
+    };
+    questionFeedback(params).then(() => {
+      // µÅÉΣ║ñΣ╣ïσÉÄ∩╝îσÄ╗µï┐σ¢₧σñìµ¿íµ¥┐
+      queryFeedbackConfig({
+        languageCode: _lng,
+        type: configType,
+      }).then((res) => {
+        setSpinning(false);
+        onSubmit?.();
+      });
+    });
+  };
+
+  const fieldDisabled = readOnly || submit;
+  const formInitValues =
+    readOnly && readonlyInitial
+      ? {
+          feedbackType: readonlyInitial.feedbackType,
+          feedback: readonlyFeedbackText,
+        }
+      : undefined;
+
+  return spinning ? (
+    <Spin />
+  ) : (
+    <div
+      className={`${styles.collectOrderInfo} ${fromClassName ? styles[fromClassName] : ""} ${readOnly ? styles.collectOrderInfoReadOnly : ""}`}
+    >
+      <Form
+        form={form}
+        key={
+          readOnly && readonlyInitial
+            ? `ro-${readonlyInitial.feedbackType}-${readonlyFeedbackText}`
+            : "fb-form"
+        }
+        className={styles.form}
+        layout="vertical"
+        initialValues={formInitValues}
+        onFinish={handleSubmit}
+      >
+        {isDislike && (
+          <Form.Item
+            name="feedbackType"
+            label={
+              readOnly
+                ? t.aiFeedback.feedbackTypeLabelReadOnly
+                : t.aiFeedback.feedbackTypeLabel
+            }
+            rules={
+              readOnly
+                ? []
+                : [{ required: true, message: t.aiFeedback.feedbackTypeLabel }]
+            }
+          >
+            <Radio.Group
+              disabled={fieldDisabled}
+              className={`${styles.radioGroup} ${type === "button" ? styles.buttonStyle : ""}`}
+            >
+              <Space
+                direction="vertical"
+                align="start"
+                className={styles.radioGroupSpace}
+              >
+                {reasonOptions.map((item, index) =>
+                  type === "button" ? (
+                    <Radio.Button
+                      key={index}
+                      value={item.value}
+                      className={`${styles.radio} ${item.value === watchedFeedbackType ? styles.active : ""}`}
+                    >
+                      {item.label}
+                    </Radio.Button>
+                  ) : (
+                    <Radio
+                      key={index}
+                      value={item.value}
+                      className={`${styles.radio} ${item.value === watchedFeedbackType ? styles.active : ""}`}
+                    >
+                      {item.label}
+                    </Radio>
+                  ),
+                )}
+              </Space>
+            </Radio.Group>
+          </Form.Item>
+        )}
+        {showFeedbackTextArea && (
+          <Form.Item
+            key={isDislike ? "fb-dislike" : "fb-like"}
+            name="feedback"
+            rules={
+              readOnly
+                ? []
+                : isDislike
+                  ? []
+                  : [
+                      {
+                        required:
+                          watchedFeedbackType === FEEDBACK_TYPE_DETAIL_REQUIRED,
+                        message: t.aiFeedback.feedbackPlaceholder,
+                      },
+                    ]
+            }
+          >
+            <Input.TextArea
+              className={styles.feedbackInput}
+              rows={4}
+              placeholder={t.aiFeedback.complaintReasonPlaceholder}
+              maxLength={500}
+              disabled={fieldDisabled}
+            />
+          </Form.Item>
+        )}
+        {!readOnly && (
+          <div className={styles.btnWrapper}>
+            <Button
+              className={`${styles.submitButton} ${submitBlocked ? styles.submitBlocked : ""}`}
+              type="primary"
+              htmlType="submit"
+              disabled={submit || submitBlocked}
+            >
+              {t.aiFeedback.submit}
+            </Button>
+          </div>
+        )}
+      </Form>
+    </div>
+  );
+}
+

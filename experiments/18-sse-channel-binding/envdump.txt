@@ -1,0 +1,108 @@
+﻿
+### webpack://_N_E/./request/index.ts
+import { authService } from "@/app/services/AuthService";
+import {
+  reporterInstance,
+  ReportScene,
+  reportScene,
+} from "@/app/services/DataReporter";
+import { message } from "antd";
+import { getTranslations, getPageLangToHeader } from "@/app/locales";
+const TOKEN_EXPIRATION = "30002";
+const NO_AUTHORITY = "30003";
+const SUCCESS_CODE = "000000";
+// τÖ╗σ╜òµÇüσñ▒µòê∩╝ê30002/30003∩╝ëµè¢σç║τÜäΘöÖΦ»»µáçΦ«░∩╝Üσ╖▓ΦºªσÅæτÖ╗σç║σ╣╢Φ╖│Φ╜¼τÖ╗σ╜òΘí╡∩╝î
+// catch Σ╕¡µì«µ¡ñΦ╖│Φ┐ç message.error∩╝îΘü┐σàìσåìτ╗Öτö¿µê╖σ╝╣Σ╕ÇΣ╕¬σñÜΣ╜ÖτÜäΘöÖΦ»»µíå
+const AUTH_EXPIRED_ERROR_NAME = "AuthExpiredError";
+
+// ΘçìΦ»òΘàìτ╜«
+const MAX_RETRY_ATTEMPTS = 1;
+const RETRY_DELAY_BASE = 1000; // σƒ║τíÇσ╗╢Φ┐ƒµù╢Θù┤∩╝êµ»½τºÆ∩╝ë
+const SERVICE_ERROR_MSG = "service error";
+export const baseUrl =
+  process.env.NODE_ENV === "development"
+    ? ""
+    : process.env.NEXT_PUBLIC_API_HOST;
+
+interface RequestOptions extends RequestInit {
+  crossDomain?: boolean;
+  withCredentials?: boolean;
+  params?: Record<string, unknown>;
+  timeout?: number;
+  // Σ╕ìΣ╕èµèÑerror∩╝îµ»öµû╣Φ»┤σ╖▓Φ»╗µ£¬Φ»╗µÄÑσÅú∩╝îΣ╕èµèÑµ╢êµü»µÄÑσÅúτ¡ë∩╝îΦïÑµè¢σç║σ╝éσ╕╕∩╝îΣ╕ìµÅÉτñ║ΘöÖΦ»»∩╝îΣ╜åµÿ»Θ£ÇΦªüµö╢Θ¢åµò░µì«
+  doNotCacheError?: boolean;
+  // ΘçìΦ»òµ¼íµò░
+  retryAttempts?: number;
+  // ΘçìΦ»òΘù┤ΘÜöµù╢Θù┤
+  retryDelayBase?: number;
+  // Φ»╖µ▒éµ¥Ñµ║ÉΣ║ÄΘçìΦ»òτö¿Σ║ÄΣ╕èµèÑΘçìΦ»òµÿ»σÉªµêÉσèƒ
+  fromRetry?: boolean;
+  // Σ╕ìµÅÉτñ║ΘöÖΦ»»
+  notToastError?: boolean;
+  // Σ╗╗Σ╜òσñ▒Φ┤Ñ∩╝êσÉ½ HTTP 403πÇüΣ╕ÜσèíτáüπÇüτ╜æτ╗£σ╝éσ╕╕∩╝ëΘâ╜Σ╕ìτÖ╗σç║πÇüΣ╕ìµÅÉτñ║πÇüΣ╕ìµè¢σç║∩╝îΦ┐öσ¢₧ undefined
+  swallowError?: boolean;
+  // Θ£ÇΦªüΣ┐¥τòÖΣ╕║σ¡ùτ¼ªΣ╕▓τÜäσñºµò┤µò░σ¡ùµ«╡∩╝êΘ¢¬Φè▒ ID Φ╢àΦ┐ç Number.MAX_SAFE_INTEGER Σ╝ÜΣ╕óτ▓╛σ║ª∩╝ë
+  // Σ╝áσàÑσ¡ùµ«╡σÉìσÉÄ∩╝îΣ╝Üσ£¿ JSON.parse σëìµèèΦ┐ÖΣ║¢σ¡ùµ«╡τÜäτ║»µò░σ¡ùσÇ╝Φ╜¼µêÉσ¡ùτ¼ªΣ╕▓∩╝îΘü┐σàìτ▓╛σ║ªΣ╕óσñ▒
+  bigIntFields?: string[];
+}
+
+/**
+ * σêñµû¡µÿ»σÉªΣ╕║τ╜æτ╗£σ▒éσñ▒Φ┤Ñ∩╝êfetch Φó½Σ╕¡µû¡ / µû¡τ╜æ / Φó½µïªµê¬σÖ¿µïªµê¬τ¡ë∩╝ëπÇé
+ * σÉäµ╡ÅΦºêσÖ¿µûçµíêΣ╕ìσÉî∩╝ÜChrome "Failed to fetch"πÇüSafari/WebKit "Load failed"πÇü
+ * Firefox "NetworkError when attempting to fetch resource"∩╝îτ╗ƒΣ╕Çσ£¿µ¡ñΦ»åσê½∩╝î
+ * Θü┐σàìσÅ¬σî╣Θàì "fetch" σ»╝Φç┤ Safari τÜä "Load failed" Φó½µ╝ÅσêñπÇé
+ */
+function isNetworkError(error: unknown): boolean {
+  return (
+    error instanceof TypeError &&
+    /load failed|failed to fetch|networkerror/i.test(error.message)
+  );
+}
+
+/**
+ * µèèσôìσ║öµûçµ£¼Σ╕¡µîçσ«Üσ¡ùµ«╡τÜäτ║»µò░σ¡ùσÇ╝σîàΦú╣µêÉσ¡ùτ¼ªΣ╕▓∩╝îΘü┐σàìσñºµò┤µò░∩╝êΘ¢¬Φè▒ ID∩╝ëτ▓╛σ║ªΣ╕óσñ▒πÇé
+ * Σ╗àσñäτÉåσ╜óσªé "field": 123456789012345678 τÜäµò┤µò░σÇ╝∩╝înull / σ¡ùτ¼ªΣ╕▓σÇ╝Σ┐¥µîüΣ╕ìσÅÿπÇé
+ */
+function parseJsonPreservingBigInt(text: string, fields: string[]) {
+  const pattern = new RegExp(`"(${fields.join("|")})"\\s*:\\s*(-?\\d+)`, "g");
+  const safeText = text.replace(pattern, '"$1":"$2"');
+  return JSON.parse(safeText);
+}
+
+/**
+ * σ░üΦúàτÜäΦ»╖µ▒éµû╣µ│ò
+ * @param url Φ»╖µ▒éσ£░σ¥Ç
+ * @param options Φ»╖µ▒éΘàìτ╜«
+ * @returns Promise
+ */
+async function request<T = unknown>(
+  url: string,
+  options: RequestOptions = {},
+): Promise<T> {
+  const {
+    params,
+    timeout = 60000,
+    retryAttempts = MAX_RETRY_ATTEMPTS,
+    retryDelayBase = RETRY_DELAY_BASE,
+    bigIntFields,
+    ...fetchOptions
+  } = options;
+
+  // σñäτÉå URL σÅéµò░
+  // σªéµ₧£ URL σîàσÉ½ gw∩╝îΣ╜┐τö¿τë╣σ«ÜτÜä baseUrl
+  const finalBaseUrl = url.includes("gw")
+    ? process.env.NEXT_PUBLIC_ROBOT_API_HOST // "https://test-support.bambulab.net"
+    : baseUrl;
+  let finalUrl = url.startsWith("http") ? url : `${finalBaseUrl}${url}`;
+
+  if (params) {
+    const queryString = Object.entries(params)
+      .map(
+        ([key, value]) =>
+          `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`,
+      )
+      .join("&");
+
+    finalUrl = `${url}${url.includes("?") ? "&" : "?"}${queryString}`;
+  }
+

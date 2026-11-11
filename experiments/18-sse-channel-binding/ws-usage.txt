@@ -1,0 +1,86 @@
+﻿
+### webpack://_N_E/./app/api/auth.ts
+47 export const getSocketTicket = () => {
+
+### webpack://_N_E/./app/services/ensureSocketForResend.ts
+3 import { webSocketService } from "@/app/services/WebSocketService";
+52 // initSocket σ£¿ getSocketTicket σñ▒Φ┤Ñµù╢Σ╝Üτ¢┤µÄÑσ¢₧Φ░â ERROR∩╝îΦïÑΣ╕ìσñäτÉåΣ╝Üτ⌐║τ¡ë CONNECT_TIMEOUT_MS
+
+### webpack://_N_E/./app/hooks/useFileUpload.ts
+3 import { webSocketService } from "../services/WebSocketService";
+
+### webpack://_N_E/./app/components/chat/MsgStatus.tsx
+12 import { webSocketService } from "@/app/services/WebSocketService";
+
+### webpack://_N_E/./app/hooks/useMessageActions.tsx
+2 import { webSocketService } from "../services/WebSocketService";
+
+### webpack://_N_E/./app/components/chat/modules/Satisfy.tsx
+10 import { webSocketService } from "@/app/services/WebSocketService";
+
+### webpack://_N_E/./app/components/chat/modules/LineUp.tsx
+11 import { webSocketService } from "@/app/services/WebSocketService";
+
+### webpack://_N_E/./app/components/chat/ShortBar.tsx
+14 import { webSocketService } from "@/app/services/WebSocketService";
+
+### webpack://_N_E/./app/components/ChatInput/components/MobileChatInput.tsx
+5 import { webSocketService } from "@/app/services/WebSocketService";
+
+### webpack://_N_E/./app/hooks/useFilePaste.ts
+14 import { webSocketService } from "../services/WebSocketService";
+
+### webpack://_N_E/./app/hooks/useInputTyping.ts
+3 import { webSocketService } from "../services/WebSocketService";
+
+### webpack://_N_E/./app/components/ChatInput/index.tsx
+10 import { webSocketService } from "@/app/services/WebSocketService";
+
+### webpack://_N_E/./app/components/chatHeader/index.tsx
+9 import { webSocketService } from "@/app/services/WebSocketService";
+
+### webpack://_N_E/./app/components/chat/ChatBody.tsx
+22 import { webSocketService } from "@/app/services/WebSocketService";
+
+### webpack://_N_E/./app/lib/AClickListener.tsx
+11 import { webSocketService } from "../services/WebSocketService";
+
+### webpack://_N_E/./app/components/robot/components/sidebarContent/fragments/categoryList/index.tsx
+42 import { webSocketService } from "@/app/services/WebSocketService";
+
+### webpack://_N_E/./app/hooks/useClientInit.ts
+3 import { webSocketService } from "../services/WebSocketService";
+25 import { getSocketTicket, SocketTicket } from "../api/auth";
+139 // µ»Åµ¼íΘâ╜Φªüσàê await getSocketTicket∩╝îσàêσÅæΦ╡╖τÜäΘéúµ¼íσÅ»Φâ╜σÉÄΦÉ╜σ£░∩╝î
+142 let socketUrl = process.env.NEXT_PUBLIC_API_HOST as string;
+144 if (!socketUrl) {
+153 socketUrl = process.env.NEXT_PUBLIC_SOCKET_HOST as string;
+155 socketUrl = socketUrl.replace("https", "wss");
+161 ticket = (await getSocketTicket()).ticket || "";
+180 const wsUrl = new URL(`${socketUrl}/ws/cus`);
+
+### webpack://_N_E/./app/hooks/useStoreBoundDirectLink.ts
+11 import { webSocketService } from "@/app/services/WebSocketService";
+
+### webpack://_N_E/./app/client/socketClient.ts
+1 import { getSocketTicket } from "../api/auth";
+24 } from "../services/WebSocketService";
+110 // close() Σ╣ïσÉÄσ«₧Σ╛ïΣ╝ÜΦó½ WebSocketService Σ╕óσ╝â∩╝îτ╜«Σ╜ìσÉÄΣ╕ìσ╛ùσåìσ╗║Σ╗╗Σ╜òΦ┐₧µÄÑ
+141 let socketUrl = this.options.url;
+147 const { ticket } = await getSocketTicket();
+149 socketUrl = updateUrlParameter(
+160 // πÇîµ¡úσ£¿Θô╛µÄÑΣ╕¡πÇìµ£ƒΘù┤σ«óµ£ìσÅ»Φâ╜σ╖▓τ╗Åτ╗ôµ¥ƒΣ╝ÜΦ»¥πÇéτÑ¿µï┐σê░πÇüτ╜æτ╗£µüóσñìσÉÄπÇüτ£ƒµ¡ú new WebSocket Σ╣ïσëìσåìµƒÑΣ╕Çµ¼í∩╝î
+176 socketUrl,
+182 this.socket = new WebSocket(socketUrl);
+
+### webpack://_N_E/./app/services/WebSocketService.ts
+46 class WebSocketService {
+47 private static instance: WebSocketService;
+60 public static getInstance(): WebSocketService {
+61 if (!WebSocketService.instance) {
+62 WebSocketService.instance = new WebSocketService();
+64 return WebSocketService.instance;
+398 export const webSocketService = WebSocketService.getInstance();
+
+### webpack://_N_E/./app/components/robot/components/AssociateButtonList/index.tsx
+40 import { webSocketService } from "@/app/services/WebSocketService";

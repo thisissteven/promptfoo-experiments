@@ -1,0 +1,383 @@
+﻿
+===== webpack://_N_E/./app/api/robot/handyApp.ts =====
+
+import {
+  OriginType,
+  RobotAIKeywordItem,
+  RobotAIKeywordType,
+} from "@/app/types/typeConfig/chatQuestion";
+import request from "@/request";
+
+const prefix = "/gw/robot";
+
+export interface RobotAIKeywordListProps {
+  languageCode: string;
+  type: RobotAIKeywordType;
+}
+
+export const requireRobotAIKeywordList = async (
+  params: RobotAIKeywordListProps,
+) => {
+  try {
+    const dataForm: RobotAIKeywordItem[] = await request.get(
+      `${prefix}/ai/key/list?languageCode=${params.languageCode}&type=${params.type}`,
+    );
+    return Promise.resolve(dataForm);
+  } catch (err) {
+    return Promise.reject(err);
+  }
+};
+
+export interface CollectRobotAIKeyProps {
+  keyId: string;
+  userId: string;
+  origin: OriginType;
+}
+
+export const collectRobotAIKey = async (params: CollectRobotAIKeyProps) => {
+  try {
+    await request.post(`${prefix}/ai/key/collect`, {
+      ...params,
+    });
+  } catch (err) {
+    return Promise.reject(err);
+  }
+};
+
+
+===== webpack://_N_E/./app/api/chatContent.ts =====
+
+import request from "@/request";
+import {
+  CategoryType,
+  RobotBannerType,
+  QuestionTagType,
+  TagTypeEnum,
+  RobotAIKeywordItem,
+  QuestionType,
+} from "@/app/types/typeConfig/chatQuestion";
+// import { QuestionType } from "@/app/types/typeConfig/chatQuestion";
+
+const prefix = "/gw/robot";
+
+export interface RequestCommonParamsProps {
+  [key: string]: unknown;
+}
+
+export const queryCategoryList = async (params: RequestCommonParamsProps) => {
+  try {
+    const dataForm: CategoryType[] = await request.get(
+      `${prefix}/front/category/list`,
+      { params },
+    );
+    return Promise.resolve(dataForm);
+  } catch (err) {
+    return Promise.reject(err);
+  }
+};
+
+interface QueryTagListProps {
+  type: TagTypeEnum;
+  [key: string]: unknown;
+}
+export const queryTagList = async (params: QueryTagListProps) => {
+  try {
+    const dataForm: QuestionTagType[] = await request.get(
+      `${prefix}/knowledge/tag/list`,
+      { params },
+    );
+    return Promise.resolve(dataForm);
+  } catch (err) {
+    return Promise.reject(err);
+  }
+};
+
+export const queryAIKeyList = async (params: QueryTagListProps) => {
+  try {
+    const dataForm: RobotAIKeywordItem[] = await request.get(
+      `${prefix}/ai/key/list`,
+      { params },
+    );
+    return Promise.resolve(dataForm);
+  } catch (err) {
+    return Promise.reject(err);
+  }
+};
+
+interface BannerParamsProps {
+  languageCode: string;
+  [key: string]: unknown;
+}
+export const queryBannerList = async (params: BannerParamsProps) => {
+  try {
+    const res: RobotBannerType[] = await request.get(`${prefix}/banner/list`, {
+      params,
+    });
+    return Promise.resolve(res);
+  } catch (err) {
+    return Promise.reject(err);
+  }
+};
+
+export interface FuzzyMatchingProblemProps {
+  content: string;
+  [key: string]: unknown;
+}
+
+export const handleFuzzyMatchingProblem = async (
+  params: FuzzyMatchingProblemProps,
+) => {
+  try {
+    const data: QuestionType[] = await request.post(
+      `${prefix}/front/fuzzy`,
+      params,
+    );
+    return Promise.resolve(data);
+  } catch (err) {
+    return Promise.reject(err);
+  }
+};
+
+export interface MsgComplaintProps {
+  userId: string;
+  sessionId?: string;
+  requestId: string;
+  reportReason: number;
+  reportDetail: string;
+  messageContent?: string;
+  extendField4: string;
+  origin: number;
+  [key: string]: unknown;
+}
+
+export const msgComplaint = async (params: MsgComplaintProps) => {
+  try {
+    const data: void = await request.post(`${prefix}/front/report`, params);
+    return Promise.resolve(data);
+  } catch (err) {
+    return Promise.reject(err);
+  }
+};
+
+
+===== webpack://_N_E/./app/api/mallCard.ts =====
+
+import request from "@/request";
+import { MallContextCard } from "@/app/store/types";
+import { parseMallContextCard } from "@/app/utils/mallContextCard";
+import { authService } from "@/app/services/AuthService";
+import { isValidUrl } from "@/app/utils/url";
+
+export interface MallCardSnapshotRequest {
+  cardType: "product" | "order";
+  site?: string;
+  orderNo?: string;
+  productId?: string;
+  businessId?: string;
+  skuId?: string;
+  product?: string;
+  clientId?: string;
+  requestId?: string;
+  aiUserId?: string;
+  aiConversationId?: string;
+}
+
+export const createMallCardSnapshot = async (
+  data: MallCardSnapshotRequest,
+): Promise<MallContextCard> => {
+  const result = await request.post<MallContextCard>(
+    "/gw/robot/im/mall/card/snapshot",
+    { ...data },
+    { timeout: 20000, notToastError: true },
+  );
+  const card = parseMallContextCard(result);
+  if (!card) {
+    throw new Error("Invalid mall card snapshot response");
+  }
+  return card;
+};
+
+/** σòåσôüσìíΣ╕║σòåσƒÄΣ╕ïσÅæτÜäτ╗┤σ║ªσÇ╝∩╝êσªé `SKU`∩╝ë∩╝îΦ«óσìòσìíΣ╕║ `order` */
+export type MallContextJumpType = string;
+
+const parseMallContextJumpUrl = (raw: unknown): string | null => {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const url = raw.trim();
+  return isValidUrl(url) ? url : null;
+};
+
+export const fetchMallContextJumpUrl = async (params: {
+  contextType: MallContextJumpType;
+  contextId: string;
+}): Promise<string> => {
+  const query = new URLSearchParams({
+    contextType: params.contextType,
+    contextId: params.contextId,
+  }).toString();
+  const bblToken = authService.getBblToken();
+  // τ╜æσà│Φ┐öσ¢₧ { code, msg, data }∩╝îrequest σ╖▓Φºúσîà data∩╝¢data Σ╕║Φ╖│Φ╜¼ URL σ¡ùτ¼ªΣ╕▓
+  const result = await request.get<string>(`/cus/context/jumpUrl?${query}`, {
+    headers: bblToken ? { bbl_token: `Bearer ${bblToken}` } : undefined,
+    notToastError: true,
+  });
+  const jumpUrl = parseMallContextJumpUrl(result);
+  if (!jumpUrl) {
+    throw new Error("Invalid mall context jump url");
+  }
+  return jumpUrl;
+};
+
+
+===== webpack://_N_E/./app/utils/mallCardEntry.ts =====
+
+import { createMallCardSnapshot } from "@/app/api/mallCard";
+import { authService } from "@/app/services/AuthService";
+import { useMessageStore } from "@/app/store";
+import {
+  HeaderType,
+  MessageSender,
+  MessageType,
+  RobotMessageType,
+} from "@/app/store/types";
+import { createMessageClientId } from "@/app/utils/string";
+
+const MALL_CARD_QUERY_KEYS = ["contextType", "businessId", "product"] as const;
+
+interface MallCardQuery {
+  cardType: "product" | "order";
+  businessId?: string;
+  orderNo?: string;
+  product?: string;
+}
+
+export const getMallWsContextFromUrl = (
+  searchParams?: URLSearchParams,
+): {
+  contextType: "product" | "order";
+  businessId: string;
+  product?: string;
+} | null => {
+  if (typeof window === "undefined") return null;
+  const params =
+    searchParams ?? new URLSearchParams(window.location.search || "");
+  const contextType = params.get("contextType")?.trim().toUpperCase();
+  const businessId = params.get("businessId")?.trim();
+  const product = params.get("product")?.trim() || undefined;
+  if ((contextType !== "PRODUCT" && contextType !== "ORDER") || !businessId) {
+    return null;
+  }
+  return {
+    contextType: contextType === "ORDER" ? "order" : "product",
+    businessId,
+    ...(product && { product }),
+  };
+};
+
+const readQuery = (searchParams: URLSearchParams): MallCardQuery | null => {
+  const contextType = searchParams.get("contextType")?.trim().toUpperCase();
+  if (contextType !== "PRODUCT" && contextType !== "ORDER") {
+    return null;
+  }
+
+  const businessId = searchParams.get("businessId")?.trim() || undefined;
+  const product = searchParams.get("product")?.trim() || undefined;
+  if (!businessId) return null;
+  if (contextType === "ORDER") {
+    return {
+      cardType: "order",
+      businessId,
+      ...(product && { product }),
+    };
+  }
+  return {
+    cardType: "product",
+    businessId,
+    ...(product && { product }),
+  };
+};
+
+export const clearMallContextQuery = () => {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  let changed = false;
+  MALL_CARD_QUERY_KEYS.forEach((key) => {
+    if (url.searchParams.has(key)) {
+      url.searchParams.delete(key);
+      changed = true;
+    }
+  });
+  if (changed) {
+    window.history.replaceState({}, document.title, url.toString());
+  }
+};
+
+/**
+ * σÉîΣ╕ÇΣ╕¬πÇîσç║σìíµäÅσ¢╛πÇìσñìτö¿σÉîΣ╕ÇΣ╕¬ clientId∩╝Üσê╖µû░µ£¬µ╕àσÅéµù╢σÉÄτ½»σÅ»µîë clientId σêñΘçì∩╝î
+ * Σ╕ìΣ╝Üσ£¿Φüèσñ⌐Φ«░σ╜òΘçîΦÉ╜τ¼¼Σ║îµ¥íσìíτëçπÇé
+ */
+const getClientId = (query: MallCardQuery) => {
+  const storageKey = `mall_card_snapshot_client_id:${JSON.stringify(query)}`;
+  const stored = sessionStorage.getItem(storageKey);
+  if (stored) return { clientId: stored, storageKey };
+
+  const clientId = `mall-${query.cardType}-${createMessageClientId()}`;
+  sessionStorage.setItem(storageKey, clientId);
+  return { clientId, storageKey };
+};
+
+const hasRenderedCard = (clientId: string) => {
+  const { historyMsgList, msgList } = useMessageStore.getState();
+  return [...historyMsgList, ...msgList].some(
+    (item) => item.clientId === clientId,
+  );
+};
+
+/**
+ * σòåσƒÄσ╕ªσÅéΦ┐¢τ║┐σç║σìí∩╝ÜΦºúµ₧É URL Σ╕èΣ╕ïµûç ΓåÆ Φ░â snapshot ΓåÆ µÅÆσàÑσìíτëçµ░öµ│í ΓåÆ µ╕àµÄëµ£¼µ¼íτö¿Φ┐çτÜä queryπÇé
+ * Φ»╖µ▒éσñ▒Φ┤Ñµù╢Σ┐¥τòÖ query Σ╕Ä clientId∩╝îΣ╛┐Σ║Äτö¿µê╖σê╖µû░ΘçìΦ»òπÇé
+ */
+export const renderMallCardFromUrl = async (
+  searchParams?: URLSearchParams,
+): Promise<void> => {
+  if (typeof window === "undefined") return;
+  // µ£¬τÖ╗σ╜òΣ╕ìΦ░âµÄÑσÅúπÇüΣ╣ƒΣ╕ìµ╕àσÅé∩╝êτÖ╗σ╜òσ¢₧Φ╖│σÉÄΣ╗ìΘ£Çσ╕ªτ¥ÇΣ╕èΣ╕ïµûçσç║σìí∩╝ë
+  if (!authService.getToken()) return;
+
+  const params =
+    searchParams ?? new URLSearchParams(window.location.search || "");
+  const query = readQuery(params);
+  if (!query) return;
+  const { clientId, storageKey } = getClientId(query);
+  if (hasRenderedCard(clientId)) {
+    clearMallContextQuery();
+    sessionStorage.removeItem(storageKey);
+    return;
+  }
+
+  try {
+    const card = await createMallCardSnapshot({ ...query, clientId });
+    const responseClientId = card.clientId || clientId;
+    if (!hasRenderedCard(responseClientId)) {
+      useMessageStore.getState().setRobotMessage({
+        clientId: responseClientId,
+        type:
+          card.cardType === "product"
+            ? MessageType.MallProductCard
+            : MessageType.MallOrderCard,
+        headerType: HeaderType.MESSAGE,
+        senderType: MessageSender.ROBOT,
+        messageType: RobotMessageType.ROBOT_NORMAL_REPLY,
+        content: card.cardType === "product" ? "σòåσôüσìíτëç" : "Φ«óσìòσìíτëç",
+        extension: JSON.stringify(card),
+        timestamp: Date.now(),
+        senderName: "µÖ║Φâ╜σè⌐µëï",
+        robotData: {},
+      });
+    }
+    clearMallContextQuery();
+    sessionStorage.removeItem(storageKey);
+  } catch (error) {
+    console.error("[MallCard] snapshot failed:", error);
+  }
+};
+

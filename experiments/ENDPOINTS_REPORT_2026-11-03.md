@@ -216,3 +216,8 @@ of DOMPurify.
 历史/删除/会话端点需要登录；`sse/close` 绑定 `uuid`；公开端点符合预期。两个
 无需登录的 email 端点是线索，不是已确认发现。HTML/数据外泄尝试未成功，因为 UI
 使用 DOMPurify。
+
+---
+
+Experiments and raw results / 实验代码与原始结果：
+https://github.com/thisissteven/promptfoo-experiments/tree/main/experiments

@@ -1,0 +1,414 @@
+﻿
+### webpack://_N_E/./app/components/ChatInput/index.tsx
+"use client";
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+} from "react";
+import styles from "./ChatInput.module.scss";
+import { webSocketService } from "@/app/services/WebSocketService";
+import Image from "next/image";
+import EmojiPanel from "./components/EmojiPanel";
+import MobileChatInput from "./components/MobileChatInput";
+import { useMessageStore } from "@/app/store";
+import {
+  CurrentChatStatus,
+  HeaderType,
+  ImServiceChannel,
+  MessageNotRender,
+  MessageSender,
+  MessageType,
+  ScrollToBottom,
+  SocketConnectionStatus,
+} from "@/app/store/types";
+import {
+  ReportParentContentEnum,
+  RobotChatPropsType,
+} from "@/app/types/typeConfig/report";
+import { ScrollAction, ScrollFrom } from "@/app/hooks/useReadScrollToBottom";
+import UploadFile from "./components/UploadFile";
+import { useFilePaste } from "@/app/hooks/useFilePaste";
+import PasteModal from "./PasteModal";
+import { getPublicImagePath } from "@/app/utils/image";
+import ChatInputQuoted from "./ChatInputQuoted";
+import { useInputTyping } from "@/app/hooks/useInputTyping";
+import { STOP_TYPING_DELAY } from "@/app/constants";
+import { isOverseaEnv } from "@/app/utils/env";
+import AutoComplete from "@/app/components/AutoComplete";
+import { getGuestUserId, createClientUUid } from "@/app/utils/string";
+import { handleRobotChat } from "@/app/utils/bizRequest";
+import { useTranslations } from "@/app/locales";
+import { useSSESend, SSESendParams } from "@/app/hooks/robot/useSSESend";
+import { interceptAiSend } from "@/app/services/minorProtectionGuard";
+import { INTERACTION_CARD_CHAT_TYPE } from "@/app/utils/interactionCardSse";
+import type { RobotMessage } from "@/app/store/types";
+import { useCurrentUser } from "@/app/lib/AuthProvider";
+import { Button, Modal, message } from "antd";
+import SvgEndChat from "@/app/icons/SvgEndChat.svg";
+import AppButton from "@/app/ui/button";
+import {
+  closeConversation,
+  hasActiveConversation,
+  reportPush,
+} from "@/app/api/message";
+import { ReportScene, reportScene } from "@/app/services/DataReporter";
+import { type MessageSendSource } from "@/app/services/trackEvents";
+
+interface ChatInputProps {
+  handleScrollToBottom: ScrollToBottom;
+  pageVisible?: boolean;
+}
+
+export default function ChatInput(props: ChatInputProps) {
+  const [inputVal, setInputVal] = useState<string>("");
+  const [showEmojiPanel, setShowEmojiPanel] = useState<boolean>(false);
+  const [isMobile, setIsMobile] = useState<boolean>(false);
+  // textarea µÿ»σÉªΦó½σåàσ«╣µÆæσ╝ÇΣ╕║σñÜΦíî∩╝êτö¿Σ║Äσêçµìóσ▒àΣ╕¡/σ║òΘâ¿σ»╣Θ╜É∩╝ë
+  const [inputExpanded, setInputExpanded] = useState<boolean>(false);
+  const {
+    chatStatus,
+    isConnected,
+    setCurrentChatStatus,
+    quotedMsg,
+    aiTypingEnd,
+    conversationId,
+    setConnectionStatus,
+    reEditContent,
+    setReEditContent,
+    autoSendContent,
+    setAutoSendContent,
+    imServiceChannel,
+    setImServiceChannel,
+  } = useMessageStore();
+  const { handlePaste, pasteFileVisible, modalHandler } = useFilePaste();
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const inputContainerRef = useRef<HTMLDivElement>(null);
+  const { onchangeInput } = useInputTyping();
+  const [endChatVisible, setEndChatVisible] = useState(false);
+  const [endChatLoading, setEndChatLoading] = useState(false);
+  const isComposing = useRef(false);
+  const user = useCurrentUser();
+  const regex = /(<([^>]+)>)/gi;
+  const t = useTranslations();
+
+  // Σ╜┐τö¿ useSSESend Hook
+  const { handleSSESend, isSending, stopStreaming } = useSSESend({
+    handleScrollToBottom: props.handleScrollToBottom,
+    onSendSuccess: () => {
+      // setInputVal(""); // σÅæΘÇüµêÉσèƒσÉÄµ╕àτ⌐║Φ╛ôσàÑ
+    },
+  });
+
+  // µúÇµ╡ïµÿ»σÉªΣ╕║τº╗σè¿τ½»
+  useEffect(() => {
+    const checkIsMobile = () => {
+      if (!isMobile) {
+        setIsMobile(window.innerWidth <= 768);
+      }
+    };
+
+    checkIsMobile();
+    window.addEventListener("resize", checkIsMobile);
+
+    return () => window.removeEventListener("resize", checkIsMobile);
+  }, []);
+
+
+
+### webpack://_N_E/./app/hooks/robot/useAIChat.ts
+import { useState, useCallback, useRef } from "react";
+import { SSEClient, SSEOptions } from "@/app/utils/sse";
+import {
+  ReportBizTypeEnum,
+  ReportKeywordContentEnum,
+  ReportParentContentEnum,
+} from "@/app/types/typeConfig/report";
+import request from "@/request";
+import { getRequestOrigin } from "@/app/utils/requestOrigin";
+import { createClientUUid, createMessageClientId } from "@/app/utils/string";
+import {
+  MessageType,
+  MessageSender,
+  MessageStatus,
+  HeaderType,
+  RobotMessageType,
+  RobotMessage,
+} from "@/app/store/types";
+import { useMessageStore } from "@/app/store";
+import { closeOpenAIChat } from "@/app/api/robot/chatContent";
+import {
+  trackMessageSend,
+  trackAiChat,
+  type MessageSendSource,
+} from "@/app/services/trackEvents";
+import { tryHandleNamedSseMessage } from "@/app/hooks/robot/handleNamedSseMessage";
+import { INTERACTION_CARD_CHAT_TYPE } from "@/app/utils/interactionCardSse";
+import { handleHandoffContextSseData } from "@/app/hooks/robot/handleHandoffContextSse";
+import { isHandoffContextSseEvent } from "@/app/utils/handoffContextSse";
+import {
+  shouldShowSellingLogisticsBothSelectedReply,
+  shouldShowSellingLogisticsHoldingReply,
+} from "@/app/components/robot/components/aiSellingLogistics/buildSubmitMessage";
+import {
+  shouldShowSellingOrdersBothSelectedReply,
+  shouldShowSellingOrdersHoldingReply,
+} from "@/app/components/robot/components/aiSellingOrders/buildSubmitMessage";
+import type { LogisticsFieldSource } from "@/app/api/logistics";
+import { useTranslations } from "@/app/locales";
+
+export interface AIMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: number;
+  streaming?: boolean;
+}
+
+// answer[DONE] Σ╣ïσÉÄσê░σà│Θù¡Φ┐₧µÄÑσëìτÜäσ«╜ΘÖÉµù╢Θù┤∩╝ÜΘóäτòÖτ╗ÖσÉîΣ╕Çµ¥í SSE Σ╕èσ░╛ΘÜÅτÜä
+// interaction_card / guidance_card Σ║ïΣ╗╢∩╝îΘü┐σàìΦ┐çµù⌐σà│Θù¡σ»╝Φç┤σìíτëçΣ╕óσñ▒πÇé
+const DONE_TRAILING_CARD_GRACE_MS = 1500;
+
+export interface UseAIChatOptions {
+  /**
+   * SSE τ½»τé╣ URL
+   */
+  url: string;
+  /**
+   * σÅæΘÇüµ╢êµü»τÜä API τ½»τé╣
+   */
+  sendUrl: string;
+  /**
+   * µ»Åµ¼íΘù«τ¡öτÜäΦ╢àµù╢µù╢Θù┤
+   * @default 60000
+   */
+  timeout?: number;
+  /**
+   * µÿ»σÉªΦç¬σè¿ΘçìΦ┐₧∩╝êΘÆêσ»╣τ╜æτ╗£ΘöÖΦ»»∩╝ë
+   * @default false
+   */
+  autoReconnect?: boolean;
+  /**
+   * Φ░âΦ»òµ¿íσ╝Å
+   * @default false
+   */
+  debug?: boolean;
+  /**
+   * Φç¬σ«ÜΣ╣ëΦ»╖µ▒éσñ┤
+   */
+  headers?: Record<string, string>;
+
+  sessionId?: string;
+
+  /**
+   * µ╡üσ╝Åσ¢₧σñìτ╗ôµ¥ƒµù╢τÜäσ¢₧Φ░â∩╝êµ¡úσ╕╕τ╗ôµ¥ƒ / µ£ìσèíτ½»µêûτ╜æτ╗£ΘöÖΦ»» / τö¿µê╖σü£µ¡ó∩╝ë
+   */
+  onStreamEnd?: (payload: {
+    reason: "done" | "error" | "stop";
+    messageId: string;
+  }) => void;
+}
+
+export interface UseAIChatReturn {
+  /**
+   * σ»╣Φ»¥σÄåσÅ▓
+   */
+  messages: AIMessage[];
+  /**
+   * σ╜ôσëìµ¡úσ£¿µ╡üσ╝ÅΦ╛ôσç║τÜäµ╢êµü»σåàσ«╣
+   */
+  streamingContent: string;
+  /**
+   * µÿ»σÉªµ¡úσ£¿Φ┐¢ΦíîΣ╕¡
+   */
+  isStreaming: boolean;
+  /**
+   * ΘöÖΦ»»Σ┐íµü»
+   */
+  error: Error | null;
+  /**
+   * σÅæΘÇüµ╢êµü»∩╝êσ╝Çσºïµû░τÜä AI Θù«τ¡ö∩╝ë
+   */
+  sendMessage: (
+    params: StartConnectionPropsType,
+    connectSuccessCallback?: () => void,
+    isRetry?: boolean,
+    handyHmsOnly?: boolean,
+  ) => Promise<void>;
+  /**
+   * σü£µ¡óσ╜ôσëìΘù«τ¡ö
+   */
+  stopStreaming: () => void;
+  /**
+   * µ╕àτ⌐║σ»╣Φ»¥σÄåσÅ▓
+   */
+  clearMessages: () => void;
+  /**
+   * Θçìµû░σÅæΘÇüµîçσ«Üµ╢êµü»;Σ╕ìΣ╝áσêÖΘçìΦ»òµ£ÇσÉÄΣ╕Çµ¥í
+   */
+  retry: (messageId?: string) => Promise<void>;
+}
+
+export interface StartConnectionPropsType {
+  bizType: ReportBizTypeEnum;
+  content: string;
+  contentId?: string;
+  contentType: ReportKeywordContentEnum;
+  parentContent?: string;
+  parentContentId?: string;
+  parentContentType?: ReportParentContentEnum;
+  requestId?: string;
+  trackSource?: MessageSendSource;
+  /** σö«Σ╕¡τë⌐µ╡üµÅÉΣ║ñσÉÄτ╗¡Φüè / Σ║ñΣ║Æσìíτëçτ╗¡Φüè */
+  chatType?: string;
+  submissionId?: string;
+  /** Σ║ñΣ║Æσìíτëçτ╗¡Φüè∩╝ÜΦó½ΘÇëσìíτëç clientId∩╝êΣ╛¢σÉÄτ½» best-effort ΦÉ╜σ║ôΘÇëΣ╕¡µÇü∩╝ë */
+  interactionCardClientId?: string;
+  /** Σ║ñΣ║Æσìíτëçτ╗¡Φüè∩╝ÜΦó½ΘÇëΘÇëΘí╣Σ╕ïµáç∩╝êµÅÉτñ║σÇ╝∩╝îσÉÄτ½»Σ╗Ñ input=label σî╣ΘàìΣ╕║σçå∩╝ë */
+  selectedIndex?: number;
+  /** Φí¿σìòΦ«óσìòσÅ╖µ¥Ñµ║É∩╝ÜΣ╕ïµïëΘÇëµï⌐ selected / µëïσè¿Φ╛ôσàÑ manual */
+  orderSource?: LogisticsFieldSource;
+  trackingSource?: LogisticsFieldSource;
+  productSource?: LogisticsFieldSource;
+}
+
+export function isSellingLogisticsSubmittedChat(
+  params: StartConnectionPropsType,
+): boolean {
+  return (
+    params.chatType === "sellingLogisticsSubmitted" &&
+    typeof params.submissionId === "string" &&
+    !!params.submissionId.t
+
+### webpack://_N_E/./app/utils/interactionCardSse.ts
+import { tryParse } from "@/app/utils/object";
+
+/** SSE event σÉì∩╝êµ£ìσèíτ½»Σ╕ïσÅæΣ║ñΣ║Æσìíτëçµù╢Σ╜┐τö¿∩╝ë∩╝îΣ╕Äµ╢êµü»ΦÉ╜σ║ô type Σ╕ÇΦç┤ */
+export const INTERACTION_CARD_SSE_EVENT = "interaction_card";
+
+/** µÄÆΘÜ£ΘÇëΘí╣τ╗¡Φüè / τ¢┤µÄÑτöƒµêÉτ¡öµíêµù╢ /sse/chat µÉ║σ╕ªτÜä chatType */
+export const INTERACTION_CARD_CHAT_TYPE = "interactionCardSubmitted";
+
+/** πÇîτ¢┤µÄÑτöƒµêÉτ¡öµíêπÇìµîëΘÆ«σ¢║σ«Ü Query µûçµíê∩╝êσÄƒµá╖Σ╜£Σ╕║ input σÅæτ╗Ö HA∩╝îΣ╕ìσÅ»µ£¼σ£░σîû∩╝ë */
+export const DIRECT_ANSWER_QUERY = "τ¢┤µÄÑτöƒµêÉτ¡öµíê";
+
+/** τÄ░Φ▒íΘÇëµï⌐σìí∩╝Üµö╢µò¢µòàΘÜ£σ£║µÖ» */
+export const CARD_TYPE_PHENOMENON = "phenomenon_choice";
+/** Φºúσå│µû╣µíêσìí∩╝Üτ╗Öσç║Φºúσå│µ¡ÑΘ¬ñ + τí«Φ«ñτ╗ôµ₧£ */
+export const CARD_TYPE_SOLUTION = "solution";
+
+export function isInteractionCardSseEvent(event?: string): boolean {
+  return event === INTERACTION_CARD_SSE_EVENT;
+}
+
+/** σìíτëçσåàσìòΣ╕¬ΘÇëΘí╣ */
+export interface InteractionCardOption {
+  label: string;
+  /** σ¢╛µûçΘÇëΘí╣τ╝⌐τòÑσ¢╛∩╝¢µ£ëσÇ╝µù╢Σ╗Ñσ¢╛µûçΘÇëΘí╣σìíµ╕▓µƒô */
+  image?: string;
+}
+
+/** interaction_card_info σåàσ▒éτ╗ôµ₧ä∩╝êΣ╕Ä HA σìÅΦ««σÉîµ₧ä∩╝ë */
+export interface InteractionCardInfo {
+  cardType?: string;
+  /** σ╝òσ»╝µ«╡∩╝îΣ╗àτ¼¼Σ╕Çσ╝áσìíΘÇÜσ╕╕µ£ë∩╝îτö▒ HA σå│σ«Ü∩╝¢µ£ëσÇ╝σ▒òτñ║πÇîσà│Σ║ÄπÇöXXπÇòτÜäµÄÆµƒÑΓÇªπÇì */
+  guidance?: string;
+  scenarioTitle?: string;
+  scenarioDescription?: string;
+  scenarioImages: string[];
+  /** Φ¡ªσæèµûçµíê∩╝îµ£ëσÇ╝µù╢Θ╗äΦë▓σ║òΦë▓Φ¡ªσæèµ¥í */
+  warning?: string;
+  optionsDescription?: string;
+  options: InteractionCardOption[];
+}
+
+export interface InteractionCardPayload {
+  /** σìíτëçτ¿│σ«Ü id∩╝îτö¿Σ║ÄΦÉ╜σ║ô/σÄ╗Θçì∩╝îτ╗¡Φüèµù╢Σ╜£Σ╕║ interactionCardClientId σ¢₧Σ╝á */
+  clientId?: string;
+  cardType?: string;
+  info: InteractionCardInfo;
+  /** σÄåσÅ▓σ¢₧τ£ï∩╝Üσ╖▓ΦÉ╜σ║ôσìíτëçτÜäΘÇëΣ╕¡Θí╣ label∩╝êσÉÄτ½» best-effort σåÖσàÑ extension∩╝ë */
+  selectedLabel?: string;
+  /** σÄåσÅ▓σ¢₧τ£ï∩╝Üσ╖▓ΦÉ╜σ║ôσìíτëçτÜäΘÇëΣ╕¡Θí╣Σ╕ïµáç */
+  selectedIndex?: number;
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is string => typeof v === "string" && !!v.trim());
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function readIndex(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const n = Number(value);
+    if (Number.isInteger(n) && n >= 0) return n;
+  }
+  return undefined;
+}
+
+/** σÑæτ║ªσ¡ùµ«╡Σ╕║ image∩╝¢σà╝σ«╣ images µò░τ╗äσÅûΘªûσ╝á */
+function resolveOptionImage(
+  record: Record<string, unknown>,
+): string | undefined {
+  const single = readString(record.image);
+  if (single) return single.trim();
+  return toStringArray(record.images)[0];
+}
+
+function parseOptions(value: unknown): InteractionCardOption[] {
+  if (!Array.isArray(value)) return [];
+  return value.reduce<InteractionCardOption[]>((acc, item) => {
+    if (item && typeof item === "object" && !Array.isArray(item)) {
+      const record = item as Record<string, unknown>;
+      const label = typeof record.label === "string" ? record.label.trim() : "";
+      if (label) {
+        const image = resolveOptionImage(record);
+        acc.push({ label, ...(image ? { image } : {}) });
+      }
+    } else if (typeof item === "string" && item.trim()) {
+      acc.push({ label: item.trim() });
+    }
+    return acc;
+  }, []);
+}
+
+function parseInfo(value: unknown): InteractionCardInfo {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { scenarioImages: [], options: [] };
+  }
+  const record = value as Record<string, unknown>;
+  return {
+    cardType: readString(record.card_type),
+    guidance: readString(record.guidance),
+    scenarioTitle: readString(record.scenario_title),
+    scenarioDescription: readString(record.scenario_description),
+    scenarioImages: toStringArray(record.scenario_images),
+    warning: readString(record.warning),
+    optionsDescription: readString(record.options_description),
+    options: parseOptions(record.options),
+  };
+}
+
+/** extension µÿ»σÉªµë┐Φ╜╜σìíτëçµò░µì«∩╝êσÉ½ interaction_card_info µêûµá╕σ┐âσìíτëçσ¡ùµ«╡∩╝ë */
+function isCardHost(record: Record<string, unknown>): boolean {
+  return (
+    record.interaction_card_info !== undefined ||
+    record.scenario_title !== undefined ||
+    record.scenario_description !== undefined ||
+    record.options !== undefined
+  );
+}
+
+/**
+ * Φºúσ╝ÇΣ┐íσ░üΣ╕èτÜä extension σ¡ùµ«╡∩╝ÜσÅ»Φâ╜µÿ» JSON σ¡ùτ¼ªΣ╕▓µêûσ╖▓Φºúµ₧Éσ»╣Φ▒íπÇé
+ * Σ╗àσ╜ôσà╢µë┐Φ╜╜σìíτëçµò░µì«µù╢µëìΦ┐ö

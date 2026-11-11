@@ -1,0 +1,1132 @@
+﻿
+===== webpack://_N_E/./app/store/formatMessage.ts =====
+
+import { ReportScene, reportScene } from "../services/DataReporter";
+import { getStoredIssueTypeCache } from "../hooks/useURLSearchParams";
+import { getOneShotIssueTypeName } from "../utils/storeBoundDirect";
+import { findLast, isInEnum } from "../utils/array";
+import { getFileType } from "../utils/file";
+import { tryParse } from "../utils/object";
+import { sanitizeMessage, useMessageStore } from "./message";
+import {
+  CurrentChatStatus,
+  Message,
+  MessageSender,
+  MessageStatus,
+  MessageType,
+  RiskStatus,
+  SocketConnectionStatus,
+} from "./types";
+
+// Σ║║σ╖Ñµ¼óΦ┐ÄΦ»¡
+export const isAgentWelcome = (msg: Message) =>
+  msg.type === MessageType.Welcome && msg.senderType === MessageSender.SYSTEM;
+
+// µÄÆΘÿƒµ╢êµü»
+export const isLineUpMsg = (msg: Message) =>
+  msg?.type === MessageType.LineUp && msg.senderType === MessageSender.SYSTEM;
+
+export const isChatEndMsg = (msg: Message) =>
+  msg?.type === MessageType.MsgEnd && msg.senderType === MessageSender.SYSTEM;
+
+export const isAgentOnline = (msg: Message) =>
+  msg.senderType === MessageSender.AGENT;
+
+export const isWithdrawnMsg = (msg: Message) =>
+  msg.type === MessageType.Recall || !!msg.beRecalled;
+
+export const isForbiddenMsg = (msg: Message) =>
+  msg.type === MessageType.ForbiddenMsg || msg.riskStatus === RiskStatus.Failed;
+
+// σæ╜Σ╕¡σ╜ôσëìΣ╝ÜΦ»¥ store-bound µ╕áΘüôτÜä issueType τ│╗τ╗ƒµ╢êµü»Σ╕Çσ╛ïΘÜÉΦùÅπÇé
+//
+// Σ╗àΦ┐çµ╗ñσ╜ôσëìΣ╝ÜΦ»¥∩╝êΣ║ºσôüσå│τ¡û Q3∩╝ë∩╝ÜΦ╖¿µ╕áΘüôτÜäσÄåσÅ▓Σ╕▓σÅ░Σ╕ìσåìσüÜτë╣µ«èσñäτÉå∩╝î
+// Σ╛ïσªéσàêτö¿ direct Φ╖æΦ┐çΣ╝ÜΦ»¥σåìτö¿ sam µë½τáüΦ┐¢σàÑµù╢∩╝îσÄåσÅ▓Θçîµ«ïτòÖτÜä
+// "Σ╕çΦ▒íσƒÄΘù¿σ║ùΣ╕ôσ▒₧" IssueType τ│╗τ╗ƒµ╢êµü»Σ╝Üτàºσ╕╕µÿ╛τñ║πÇé
+//
+// issueTypeName τö▒ handleStoreBoundChannel Φ░â getStoreReception σÉÄσåÖσàÑ
+// sessionStorage∩╝îσà│ tab σì│Φ┐çµ£ƒπÇé
+const isStoreBoundIssueTypeMsg = (msg: Message): boolean => {
+  if (msg.type !== MessageType.IssueType) return false;
+  // Θªûσ▒Å store-bound∩╝êqr_issue_type_name∩╝ëΣ╕Äτ½ÖσåàΣ╕Çµ¼íµÇºτ¢┤Φ┐₧∩╝êoneshot key∩╝ëτÜäΘù¿σ║ùσÉìΘâ╜Φªüσî╣Θàì∩╝Ü
+  // Σ╕Çµ¼íµÇºτ¢┤Φ┐₧Σ╕ìσåÖ qr_*∩╝îΘù¿σ║ùσÉìΦ╡░τï¼τ½ï oneshot key∩╝îσÉªσêÖµ£¼µ¼íΣ╝ÜΦ»¥τÜäΘù¿σ║ùτ│╗τ╗ƒµ╢êµü»µùáµ│òΘÜÉΦùÅπÇé
+  const parsed = tryParse(msg.content);
+  const msgText = parsed?.text ?? msg.content;
+  if (typeof msgText !== "string") return false;
+  const persistedName = getStoredIssueTypeCache()?.issueTypeName;
+  const oneShotName = getOneShotIssueTypeName();
+  return (
+    (!!persistedName && msgText === persistedName) ||
+    (!!oneShotName && msgText === oneShotName)
+  );
+};
+
+export const formatHistory = (historyData: Message[]) => {
+  return historyData.filter((item) => {
+    const parseContent = tryParse(item.content);
+    if (parseContent && parseContent.fileName) {
+      item.content = JSON.stringify({
+        ...parseContent,
+        fileType: getFileType(parseContent.fileName),
+      });
+    }
+    if (isStoreBoundIssueTypeMsg(item)) {
+      return false;
+    }
+    return item.type !== MessageType.LineUp;
+  });
+};
+
+export const isDisConnectedNeedReconnect = () => {
+  const { chatStatus, isConnected } = useMessageStore.getState();
+  return isConnected === SocketConnectionStatus.CLOSE && chatStatus;
+};
+
+export const formatMsgList = (msgList: Message[], newMessage: Message) => {
+  if (
+    isLineUpMsg(newMessage) ||
+    isAgentOnline(newMessage) ||
+    isChatEndMsg(newMessage) ||
+    isAgentWelcome(newMessage)
+  ) {
+    // µ¥Ñµ║ÉτÜäµ╢êµü»µÿ»µÄÆΘÿƒµ╢êµü», ΘÜÉΦùÅΣ╣ïσëìτÜäµÄÆΘÿƒµ╢êµü»∩╝îµÅÆσàÑµû░τÜäµÄÆΘÿƒµ╢êµü»
+    const { index } =
+      findLast(
+        msgList,
+        (msg) =>
+          msg?.type === MessageType.LineUp &&
+          msg.senderType === MessageSender.SYSTEM,
+      ) || {};
+    if (index !== undefined) {
+      msgList[index].hide = true;
+    }
+  }
+
+  // σªéµ₧£µÿ»µÆñσ¢₧µ╢êµü»∩╝îµ¢┤µû░µ£¼σ£░µ╢êµü»τè╢µÇü
+  if (
+    isWithdrawnMsg(newMessage) &&
+    newMessage.senderType === MessageSender.SYSTEM
+  ) {
+    // µ¢┤µû░µ£¼σ£░τè╢µÇü
+    useMessageStore
+      .getState()
+      .withdrawMessage(newMessage.id as string, MessageSender.SYSTEM);
+  }
+
+  // µûçΣ╗╢µ╢êµü»τ▒╗σ₧ï∩╝îΦúàµìóΣ╕ÇΣ╕ï
+  const parseContent = tryParse(newMessage.content);
+  if (parseContent && parseContent.fileName) {
+    newMessage.content = JSON.stringify({
+      ...parseContent,
+      fileType: getFileType(parseContent.fileName),
+    });
+  }
+
+  return [
+    ...msgList,
+    {
+      ...sanitizeMessage(newMessage),
+      status: MessageStatus.Success, // µÄÑµö╢τÜäµ╢êµü»Θâ╜µÿ»µêÉσèƒτè╢µÇü
+    },
+  ];
+};
+
+export const getCurrentChatStatus = (newMessage: Message) => {
+  if (isLineUpMsg(newMessage)) {
+    return CurrentChatStatus.LineUp;
+  }
+
+  if (isAgentOnline(newMessage) || isAgentWelcome(newMessage)) {
+    return CurrentChatStatus.Online;
+  }
+
+  if (isChatEndMsg(newMessage)) {
+    return CurrentChatStatus.ChatEnd;
+  }
+
+  return null;
+};
+
+export const handleLineMsg = (msgList: Message[], newMessage: Message) => {
+  let lineMsg = null;
+  const excludeLineMsgList: Message[] = [];
+  msgList.forEach((msg) => {
+    if (isLineUpMsg(msg)) {
+      lineMsg = msg;
+    } else {
+      excludeLineMsgList.push(msg);
+    }
+  });
+  return {
+    excludeLineMsgList,
+    appendMsg: lineMsg ? [newMessage, lineMsg] : [newMessage],
+  };
+};
+
+const handleForbiddenMsg = (message: Message, msgList: Message[]) => {
+  const clientId = tryParse(message.content)?.clientId;
+  if (clientId) {
+    useMessageStore.getState().updateMessageStatus(clientId as string, {
+      riskStatus: RiskStatus.Failed,
+      status: MessageStatus.Failed,
+    });
+  }
+  // ΦÇâΦÖæµ╢êµü»µÿ»σÉªΦó½σ╝òτö¿Σ║å∩╝îΦïÑσ¥Éσ╕¡σêÜµö╢σê░τ½ïΘ⌐¼σ╝òτö¿∩╝îµ╢êµü»Σ╣ƒΣ╝Üσ¡ÿσ£¿σ╝òτö¿µ╢êµü»σåà
+  msgList.forEach((item) => {
+    if (item.quoteMessage && item.quoteMessage.clientId === clientId) {
+      item.quoteMessage = {
+        ...item.quoteMessage,
+        content: "",
+        riskStatus: RiskStatus.Failed,
+        type: MessageType.ForbiddenMsg,
+      };
+    }
+  });
+};
+
+export const handleIncomingMessage = (message: Message, msgList: Message[]) => {
+  message.isNewMsg = true;
+  if (isForbiddenMsg(message)) {
+    handleForbiddenMsg(message, msgList);
+    return;
+  }
+  // µÄÑµö╢µÆñσ¢₧µ╢êµü»
+  if (isWithdrawnMsg(message)) {
+    const recallId = tryParse(message.content)?.id;
+    if (!recallId) {
+      return;
+    }
+    // µ¢┤µû░µ£¼σ£░τè╢µÇü
+    useMessageStore.getState().withdrawMessage(recallId, message.senderType);
+
+    // σêñµû¡σ╜ôσëìµ╢êµü»µÿ»σÉªµ£ëΦó½σ╝òτö¿∩╝îΦïÑΦó½σ╝òτö¿∩╝îσêÖΘ£ÇΦªüµ╕àΘÖñσåàσ«╣
+    return;
+  }
+  if (isLineUpMsg(message)) {
+    reportScene(ReportScene.LINE_UP, message.content);
+  }
+  if (message.type === MessageType.ConnectionSuccess) {
+    message.hide = true;
+    if (
+      typeof window !== "undefined" &&
+      window.globalData &&
+      typeof window.globalData.serveSocketPreparedCallback === "function"
+    ) {
+      window.globalData.serveSocketPreparedCallback();
+    }
+  }
+  if (isStoreBoundIssueTypeMsg(message)) {
+    message.hide = true;
+  }
+  const valid = isInEnum(message.type, MessageType);
+  if (!valid) {
+    // σªéµ₧£Σ╕ìσ£¿µ₧ÜΣ╕╛σ«ÜΣ╣ëτÜäτ▒╗σ₧ïΦîâσ¢┤σåà∩╝îσêÖΘÜÉΦùÅ
+    message.hide = true;
+  }
+  return message;
+};
+
+// σ░åµìóΦíîτ¼ªΦ╜¼µìóΣ╕║ HTML µìóΦíîµáçτ¡╛∩╝îσÉîµù╢Σ┐¥µîüµûçµ£¼σ«ëσà¿
+const formatContent = (content: string) => {
+  // σàêΦ┐¢Φíî HTML Φ╜¼Σ╣ëΣ╗ÑΘÿ▓µ¡ó XSS
+  const escapedContent = content
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;");
+
+  // σ░åµìóΦíîτ¼ªΦ╜¼µìóΣ╕║ <br> µáçτ¡╛
+  return escapedContent.replace(/\n/g, "<br>");
+};
+
+export const transferSendContent = (content: string) => {
+  const parseContent = tryParse(content);
+  if (!parseContent || !parseContent.text) {
+    return content;
+  }
+  parseContent.text = formatContent(parseContent.text);
+  return JSON.stringify(parseContent);
+};
+
+
+===== webpack://_N_E/./app/utils/file.ts =====
+
+import { MessageType } from "../store/types";
+import { tryParse } from "./object";
+
+/**
+ * µúÇµƒÑµûçΣ╗╢σÉìµÿ»σÉªΣ╕║σ¢╛τëçτ▒╗σ₧ï
+ * @param {string} fileName µûçΣ╗╢σÉì∩╝êσÅ»σîàσÉ½Φ╖»σ╛ä∩╝ë
+ * @returns {boolean} µÿ»σÉªΣ╕║σ¢╛τëç
+ */
+export function isImageFile(fileName: string): boolean {
+  // µö»µîüτÜäσ¢╛τëçµë⌐σ▒òσÉìσêùΦí¿∩╝êσà¿σ░ÅσåÖ∩╝ë
+  const imageExtensions = [
+    "jpg",
+    "jpeg",
+    "png",
+    "gif",
+    "bmp",
+    "webp",
+    "tiff",
+    "svg",
+    "ico",
+    "jfif",
+  ];
+
+  // σñäτÉåτ⌐║σÇ╝
+  if (!fileName || typeof fileName !== "string") return false;
+
+  // µÅÉσÅûµë⌐σ▒òσÉì
+  const lastDotIndex = fileName.lastIndexOf(".");
+  if (lastDotIndex === -1 || lastDotIndex === fileName.length - 1) {
+    return false; // µùáµë⌐σ▒òσÉìµêûτé╣σÅ╖σ£¿µ£½σ░╛
+  }
+
+  // ΦÄ╖σÅûµë⌐σ▒òσÉìσ╣╢Φ╜¼Σ╕║σ░ÅσåÖ
+  const extension = fileName.slice(lastDotIndex + 1).toLowerCase();
+
+  return imageExtensions.includes(extension);
+}
+
+/**
+ * µúÇµƒÑµûçΣ╗╢σÉìµÿ»σÉªΣ╕║ΦºåΘóæτ▒╗σ₧ï
+ * @param {string} fileName µûçΣ╗╢σÉì∩╝êσÅ»σîàσÉ½Φ╖»σ╛ä∩╝ë
+ * @returns {boolean} µÿ»σÉªΣ╕║ΦºåΘóæµûçΣ╗╢
+ */
+export function isVideoFile(fileName: string): boolean {
+  // µö»µîüτÜäΦºåΘóæµë⌐σ▒òσÉìσêùΦí¿∩╝êσà¿σ░ÅσåÖ∩╝ë
+  const videoExtensions = [
+    "mp4",
+    "avi",
+    "mov",
+    "wmv",
+    "flv",
+    "mkv",
+    "webm",
+    "mpeg",
+    "mpg",
+    "m4v",
+    "3gp",
+    "ogv",
+    "ts",
+    "m2ts",
+    "hevc",
+  ];
+
+  // σñäτÉåτ⌐║σÇ╝
+  if (!fileName || typeof fileName !== "string") return false;
+
+  // µ╕àΘÖñσÅ»Φâ╜τÜäURLσÅéµò░
+  const cleanName = fileName.split("?")[0];
+
+  // µÅÉσÅûµë⌐σ▒òσÉì
+  const lastDotIndex = cleanName.lastIndexOf(".");
+  if (lastDotIndex === -1 || lastDotIndex === cleanName.length - 1) {
+    return false; // µùáµë⌐σ▒òσÉìµêûτé╣σÅ╖σ£¿µ£½σ░╛
+  }
+
+  // ΦÄ╖σÅûµë⌐σ▒òσÉìσ╣╢Φ╜¼Σ╕║σ░ÅσåÖ
+  const extension = cleanName.slice(lastDotIndex + 1).toLowerCase();
+
+  return videoExtensions.includes(extension);
+}
+
+/**
+ * µúÇµƒÑµûçΣ╗╢σÉìµÿ»σÉªΣ╕║Θƒ│Θóæτ▒╗σ₧ï
+ * @param {string} fileName µûçΣ╗╢σÉì∩╝êσÅ»σîàσÉ½Φ╖»σ╛ä∩╝ë
+ * @returns {boolean} µÿ»σÉªΣ╕║Θƒ│ΘóæµûçΣ╗╢
+ */
+export function isAudioFile(fileName: string): boolean {
+  // µö»µîüτÜäΘƒ│Θóæµë⌐σ▒òσÉìσêùΦí¿∩╝êσà¿σ░ÅσåÖ∩╝ë
+  const audioExtensions = [
+    "mp3",
+    "wav",
+    "ogg",
+    "aac",
+    "flac",
+    "m4a",
+    "wma",
+    "aiff",
+    "opus",
+    "amr",
+    "mid",
+    "midi",
+    "aif",
+    "aifc",
+    "mka",
+    "ra",
+    "rm",
+    "alac",
+    "ac3",
+    "dsd",
+    "pcm",
+    "wv",
+    "m4b",
+    "m4p",
+    "aax",
+  ];
+
+  // σñäτÉåτ⌐║σÇ╝
+  if (!fileName || typeof fileName !== "string") return false;
+
+  // µ╕àΘÖñσÅ»Φâ╜τÜäURLσÅéµò░
+  const cleanName = fileName.split("?")[0];
+
+  // µÅÉσÅûµë⌐σ▒òσÉì
+  const lastDotIndex = cleanName.lastIndexOf(".");
+  if (lastDotIndex === -1 || lastDotIndex === cleanName.length - 1) {
+    return false; // µùáµë⌐σ▒òσÉìµêûτé╣σÅ╖σ£¿µ£½σ░╛
+  }
+
+  // ΦÄ╖σÅûµë⌐σ▒òσÉìσ╣╢Φ╜¼Σ╕║σ░ÅσåÖ
+  const extension = cleanName.slice(lastDotIndex + 1).toLowerCase();
+
+  return audioExtensions.includes(extension);
+}
+
+export const parseFileData = (str: string) => {
+  return tryParse(str);
+};
+
+export const getFileType = (fileName: string) => {
+  const isImage = isImageFile(fileName);
+  const isVideo = isVideoFile(fileName);
+  const isAudio = isAudioFile(fileName);
+  let type = MessageType.File;
+  if (isImage || isVideo || isAudio) {
+    if (isVideo) {
+      type = MessageType.Video;
+    }
+    if (isAudio) {
+      type = MessageType.Audio;
+    }
+    if (isImage) {
+      type = MessageType.Image;
+    }
+  }
+  return type;
+};
+
+function u8(buf: ArrayBuffer): Uint8Array {
+  return new Uint8Array(buf);
+}
+
+/** ISO BMFF∩╝êMP4/M4A τ¡ë∩╝ëσëìΦïÑσ╣▓σ¡ùΦèéσåàµÿ»σÉªσç║τÄ░ M4A σà╝σ«╣σôüτëî∩╝êΘâ¿σêå m4a Σ╗àµáç isom∩╝ë */
+function isoBmffContainsM4ABrand(buf: ArrayBuffer): boolean {
+  const a = u8(buf);
+  const max = Math.min(a.length, 16384);
+  for (let i = 0; i <= max - 4; i++) {
+    if (
+      a[i] === 0x4d &&
+      a[i + 1] === 0x34 &&
+      a[i + 2] === 0x41 &&
+      a[i + 3] === 0x20
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * µá╣µì«µûçΣ╗╢σñ┤Θ¡öµò░µÄ¿µû¡ MessageType∩╝¢µùáµ│òΦ»åσê½µù╢Φ┐öσ¢₧ null∩╝îτö▒Φ░âτö¿µû╣σ¢₧ΘÇÇσê░µë⌐σ▒òσÉìπÇé
+ * Σ╕ìΣ╛¥Φ╡û File.type∩╝êσÅ»Φó½ΘöÖΦ»»σÉÄτ╝ÇΦ»»σ»╝∩╝ëπÇé
+ */
+export function sniffMessageTypeFromBuffer(
+  buf: ArrayBuffer,
+): MessageType | null {
+  const a = u8(buf);
+  if (a.length < 12) {
+    return null;
+  }
+
+  // ΓÇöΓÇö σ¢╛τëç ΓÇöΓÇö
+  if (a[0] === 0xff && a[1] === 0xd8 && a[2] === 0xff) {
+    return MessageType.Image;
+  }
+  if (
+    a[0] === 0x89 &&
+    a[1] === 0x50 &&
+    a[2] === 0x4e &&
+    a[3] === 0x47 &&
+    a[4] === 0x0d &&
+    a[5] === 0x0a &&
+    a[6] === 0x1a &&
+    a[7] === 0x0a
+  ) {
+    return MessageType.Image;
+  }
+  if (a[0] === 0x47 && a[1] === 0x49 && a[2] === 0x46 && a[3] === 0x38) {
+    return MessageType.Image;
+  }
+  if (
+    a.length >= 12 &&
+    a[0] === 0x52 &&
+    a[1] === 0x49 &&
+    a[2] === 0x46 &&
+    a[3] === 0x46 &&
+    a[8] === 0x57 &&
+    a[9] === 0x45 &&
+    a[10] === 0x42 &&
+    a[11] === 0x50
+  ) {
+    return MessageType.Image;
+  }
+  if (a[0] === 0x42 && a[1] === 0x4d) {
+    return MessageType.Image;
+  }
+  // TIFF little / big endian
+  if (
+    (a[0] === 0x49 && a[1] === 0x49 && a[2] === 0x2a && a[3] === 0x00) ||
+    (a[0] === 0x4d && a[1] === 0x4d && a[2] === 0x00 && a[3] === 0x2a)
+  ) {
+    return MessageType.Image;
+  }
+
+  // ΓÇöΓÇö Θƒ│Θóæ∩╝êΦú╕µ╡ü / σ╕╕Φºüσ«╣σÖ¿∩╝ëΓÇöΓÇö
+  if (a[0] === 0x49 && a[1] === 0x44 && a[2] === 0x33) {
+    return MessageType.Audio;
+  }
+  if (a[0] === 0xff && (a[1] & 0xe0) === 0xe0) {
+    return MessageType.Audio;
+  }
+  if (a[0] === 0x4f && a[1] === 0x67 && a[2] === 0x67 && a[3] === 0x53) {
+    return MessageType.Audio;
+  }
+  if (a[0] === 0x66 && a[1] === 0x4c && a[2] === 0x61 && a[3] === 0x43) {
+    return MessageType.Audio;
+  }
+  if (
+    a.length >= 12 &&
+    a[0] === 0x52 &&
+    a[1] === 0x49 &&
+    a[2] === 0x46 &&
+    a[3] === 0x46 &&
+    a[8] === 0x57 &&
+    a[9] === 0x41 &&
+    a[10] === 0x56 &&
+    a[11] === 0x45
+  ) {
+    return MessageType.Audio;
+  }
+  // AIFF: FORM .... AIFF
+  if (
+    a.length >= 12 &&
+    a[0] === 0x46 &&
+    a[1] === 0x4f &&
+    a[2] === 0x52 &&
+    a[3] === 0x4d &&
+    a[8] === 0x41 &&
+    a[9] === 0x49 &&
+    a[10] === 0x46 &&
+    a[11] === 0x46
+  ) {
+    return MessageType.Audio;
+  }
+
+  // ΓÇöΓÇö Matroska / WebM ΓÇöΓÇö
+  if (a[0] === 0x1a && a[1] === 0x45 && a[2] === 0xdf && a[3] === 0xa3) {
+    return MessageType.Video;
+  }
+
+  // ΓÇöΓÇö AVI ΓÇöΓÇö
+  if (
+    a.length >= 12 &&
+    a[0] === 0x52 &&
+    a[1] === 0x49 &&
+    a[2] === 0x46 &&
+    a[3] === 0x46 &&
+    a[8] === 0x41 &&
+    a[9] === 0x56 &&
+    a[10] === 0x49
+  ) {
+    return MessageType.Video;
+  }
+
+  // ΓÇöΓÇö ISO BMFF∩╝êMP4 / M4A / MOV τ¡ë∩╝ë∩╝Üoffset 4 Σ╕║ ftyp ΓÇöΓÇö
+  if (a[4] === 0x66 && a[5] === 0x74 && a[6] === 0x79 && a[7] === 0x70) {
+    const brand = String.fromCharCode(a[8], a[9], a[10], a[11]);
+    if (brand === "M4A " || brand === "M4B " || brand === "M4P ") {
+      return MessageType.Audio;
+    }
+    if (brand === "qt  ") {
+      return MessageType.Video;
+    }
+    if (
+      brand === "mp42" ||
+      brand === "avc1" ||
+      brand === "MSNV" ||
+      brand === "dash"
+    ) {
+      return MessageType.Video;
+    }
+    if (brand === "isom" || brand === "mp41") {
+      return isoBmffContainsM4ABrand(buf)
+        ? MessageType.Audio
+        : MessageType.Video;
+    }
+    return MessageType.Video;
+  }
+
+  return null;
+}
+
+const SNIFF_BYTES = 65536;
+
+/**
+ * Σ╝ÿσàêµá╣µì«µûçΣ╗╢σåàσ«╣Θ¡öµò░µÄ¿µû¡τ▒╗σ₧ï∩╝¢σñ▒Φ┤Ñµù╢σ¢₧ΘÇÇσê░µë⌐σ▒òσÉì∩╝êΣ╕Ä getFileType∩╝ëπÇé
+ */
+export async function getFileTypeFromFile(file: File): Promise<MessageType> {
+  const isImage = isImageFile(file.name);
+  // σÅ¬µ£ëimageµëìΦ┐¢ΦíîΘ¡öµò░µÄ¿µû¡
+  if (!isImage) {
+    return getFileType(file.name);
+  }
+  try {
+    const n = Math.min(file.size, SNIFF_BYTES);
+    if (n === 0) {
+      return getFileType(file.name);
+    }
+    const buf = await file.slice(0, n).arrayBuffer();
+    const sniffed = sniffMessageTypeFromBuffer(buf);
+    if (sniffed !== null) {
+      return sniffed;
+    }
+  } catch {
+    // ignore
+  }
+  return getFileType(file.name);
+}
+
+
+===== webpack://_N_E/./app/utils/object.ts =====
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function mergeObject(target: any, source: any) {
+  Object.keys(source).forEach(function (key) {
+    if (source[key] && typeof source[key] === "object") {
+      mergeObject((target[key] = target[key] || {}), source[key]);
+      return;
+    }
+    target[key] = source[key];
+  });
+}
+
+export const tryParse = (str: string) => {
+  if (!str) {
+    return;
+  }
+  try {
+    return JSON.parse(str);
+  } catch {
+    return;
+  }
+};
+
+/** µ£ìσèíτ½»σÅ»Φâ╜Φ┐öσ¢₧ content Σ╕¡ text Φó½σñÜσîàΣ╕Çσ▒éσÅîσ╝òσÅ╖σ»╝Φç┤ JSON µùáµòê∩╝îσªé {"text":""µêæΦªüτ╗┤Σ┐«µ£║σÖ¿""} */
+function stripSurroundingQuotes(s: string): string {
+  let t = s;
+  while (t.length >= 2 && t.startsWith('"') && t.endsWith('"')) {
+    t = t.slice(1, -1);
+  }
+  return t;
+}
+
+/**
+ * Σ┐«σñìτò╕σ╜ó JSON∩╝ÜΦ╜¼Σ╣ëσ¡ùτ¼ªΣ╕▓σ¡ùΘ¥óΘçÅσåàµ£¬Φ╜¼Σ╣ëτÜäµÄºσê╢σ¡ùτ¼ª∩╝êµìóΦíî/σ¢₧Φ╜ª/σê╢Φí¿τ¼ª∩╝ë∩╝îσåìσ░¥Φ»òΦºúµ₧ÉπÇé
+ * τö¿Σ║Äµ£ìσèíτ½»µèèσÉ½τ£ƒσ«₧µìóΦíîτÜäµûçµ£¼τ¢┤µÄÑµï╝Φ┐¢ {"text":"...\n..."}∩╝îσ»╝Φç┤ JSON.parse σñ▒Φ┤ÑτÜäσ£║µÖ»πÇé
+ */
+function tryParseRepairedJson(
+  str: string,
+): { text?: string; [key: string]: unknown } | undefined {
+  let result = "";
+  let inString = false;
+  let escaped = false;
+  for (const ch of str) {
+    if (escaped) {
+      result += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      result += ch;
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      result += ch;
+      continue;
+    }
+    if (inString) {
+      if (ch === "\n") {
+        result += "\\n";
+        continue;
+      }
+      if (ch === "\r") {
+        result += "\\r";
+        continue;
+      }
+      if (ch === "\t") {
+        result += "\\t";
+        continue;
+      }
+    }
+    result += ch;
+  }
+  try {
+    return JSON.parse(result);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Φºúµ₧Éµ╢êµü» content σ¡ùτ¼ªΣ╕▓∩╝îΦ┐öσ¢₧ { text } τ╗ôµ₧äπÇéσà╝σ«╣σñÜτºìµ£ìσèíτ½»Φ┐öσ¢₧∩╝Ü
+ * 1. µ¡úσ╕╕ JSON∩╝Ü{"text":"..."}
+ * 2. τò╕σ╜ó JSON∩╝Üσ¡ùτ¼ªΣ╕▓σåàσÉ½µ£¬Φ╜¼Σ╣ëµÄºσê╢σ¡ùτ¼ª / text Φó½σñÜσîàΣ╕Çσ▒éσÅîσ╝òσÅ╖∩╝ê{"text":""xxx""}∩╝ë
+ * 3. τ║»µûçµ£¼∩╝Üµ£ìσèíτ½»τ¢┤µÄÑΦ┐öσ¢₧µ£¬σîàΦú╣τÜäσÄƒµûç∩╝êσÅ»Φâ╜σÉ½µìóΦíîπÇüURL∩╝ë∩╝îµ¡ñµù╢µò┤µ«╡σì│Σ╕║ text∩╝î
+ *    Θü┐σàì JSON.parse σñ▒Φ┤Ñ / µ¡úσêÖΦ╖¿Φíîσî╣ΘàìΣ╕ìσê░µù╢Φ┐öσ¢₧ undefined σ»╝Φç┤µ░öµ│íτ⌐║τÖ╜πÇé
+ */
+export function parseMessageContent(
+  str: string,
+): { text?: string; [key: string]: unknown } | undefined {
+  if (!str || typeof str !== "string") return undefined;
+  // µÿ»σÉªΓÇ£τ£ïΦ╡╖µ¥ÑσâÅΓÇ¥τ╗ôµ₧äσîû JSON∩╝êσ»╣Φ▒í/µò░τ╗ä∩╝ë∩╝îσå│σ«Üτò╕σ╜óσ£║µÖ»Σ╕ïµÿ»σÉªσà£σ║òµêÉτ║»µûçµ£¼
+  const looksLikeJsonObject = /^\s*[{[]/.test(str);
+  try {
+    const parsed = JSON.parse(str);
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      typeof parsed.text === "string"
+    ) {
+      return parsed;
+    }
+    // Φºúµ₧ÉµêÉσèƒΣ╜åΣ╕ìµÿ» {text:string}
+    // - τ╗ôµ₧äσîûσ»╣Φ▒í/µò░τ╗ä∩╝êσªéµûçΣ╗╢µ╢êµü» {fileName}∩╝ë∩╝ÜΣ║ñτö▒Σ╕èσ▒éσêñµû¡∩╝îµùá text Φ┐öσ¢₧ undefined
+    // - σ╜óσªéτ║»µò░σ¡ùτ¡ëΘ¥₧τ╗ôµ₧äσîû∩╝Üσ╜ôΣ╜£τ║»µûçµ£¼σ▒òτñ║
+    if (looksLikeJsonObject) return undefined;
+    return { text: str };
+  } catch {
+    if (looksLikeJsonObject) {
+      // τò╕σ╜ó JSON∩╝ÜσàêΣ┐«σñìµÄºσê╢σ¡ùτ¼ªσåìΦºúµ₧É
+      const repaired = tryParseRepairedJson(str);
+      if (repaired && typeof repaired.text === "string") return repaired;
+      // µ¡úσêÖσà£σ║ò∩╝ê[\s\S] Φ╖¿Φíîσî╣Θàì∩╝ë∩╝Ü{"text":""xxx""} / {"text":"xxx"}
+      const doubleQuoted = str.match(/"text"\s*:\s*""([\s\S]*?)""\s*[\},]/);
+      if (doubleQuoted) return { text: doubleQuoted[1] };
+      const singleQuoted = str.match(/"text"\s*:\s*"([\s\S]*?)"\s*[\},]/);
+      if (singleQuoted)
+        return { text: stripSurroundingQuotes(singleQuoted[1]) };
+      return undefined;
+    }
+    // Θ¥₧ JSON∩╝Üσåàσ«╣µ£¼Φ║½σì│τ║»µûçµ£¼∩╝êσÅ»Φâ╜σÉ½µìóΦíî/URL∩╝ë
+    return { text: str };
+  }
+}
+
+/**
+ * Σ╗Äσ»╣Φ▒íΣ╕¡τº╗ΘÖñµîçσ«ÜτÜäΘö«∩╝îσ╣╢Φ┐öσ¢₧µû░σ»╣Φ▒í
+ * @param obj σÄƒσºïσ»╣Φ▒í
+ * @param keysToRemove Θ£ÇΦªüτº╗ΘÖñτÜäΘö«µò░τ╗ä
+ * @returns τº╗ΘÖñµîçσ«ÜΘö«σÉÄτÜäµû░σ»╣Φ▒í
+ */
+export function removeObjectKeys<T extends object, K extends keyof T>(
+  obj: T,
+  keysToRemove: K[],
+): Omit<T, K> {
+  return Object.entries(obj).reduce(
+    (acc, [key, value]) => {
+      if (!keysToRemove.includes(key as K)) {
+        acc[key as keyof Omit<T, K>] = value;
+      }
+      return acc;
+    },
+    {} as Omit<T, K>,
+  );
+}
+
+
+===== webpack://_N_E/./app/components/chat/modules/Text.tsx =====
+
+import { Message, RiskStatus } from "@/app/store/types";
+import DangerouslySetInnerHTML from "@/app/ui/dangerouslySetInnerHTML";
+import { parseMessageContent } from "@/app/utils/object";
+import { validIsALink } from "@/app/utils/url";
+import { useTranslations } from "@/app/locales";
+import React, { useMemo } from "react";
+
+export default React.memo(
+  function Text(props: { msg: Message }) {
+    const t = useTranslations();
+    // 1. σàêΦ░âτö¿µëÇµ£ë Hook∩╝êparseMessageContent σà╝σ«╣µ£ìσèíτ½»Φ┐öσ¢₧ ""text"" τ¡ëτò╕σ╜ó JSON∩╝ë
+    const content = useMemo(() => {
+      return parseMessageContent(props.msg.content);
+    }, [props.msg.content]);
+
+    const contentText = useMemo(() => {
+      const text = content?.text || "";
+      return validIsALink(text);
+    }, [content]);
+
+    if (props.msg.riskStatus === RiskStatus.Failed) {
+      return <div>{t.riskMsg.forbidden}</div>;
+    }
+
+    // 2. σåìΦ┐¢Φíîµ¥íΣ╗╢σêñµû¡
+    if (!content) {
+      return null;
+    }
+
+    // 3. µ£ÇσÉÄΦ┐öσ¢₧ JSX
+    return <DangerouslySetInnerHTML msgContent={contentText} />;
+  }, // Φç¬σ«ÜΣ╣ë props µ»öΦ╛âσç╜µò░
+  (prevProps, nextProps) => {
+    // Σ╗àσ╜ô msg.content σÅæτöƒσÅÿσîûµù╢µëìΘçìµû░µ╕▓µƒô
+    return prevProps.msg.content === nextProps.msg.content;
+  },
+);
+
+
+===== webpack://_N_E/./app/utils/url.ts =====
+
+import { isApp } from "@/app/bridge";
+import { ExternalFromSource, MUST_LOGIN_FROM_SOURCES } from "@/app/constants";
+
+/**
+ * Σ┐«µö╣ URL Σ╕¡τÜäµîçσ«ÜσÅéµò░σÇ╝
+ * @param url σÄƒσºï URL σ¡ùτ¼ªΣ╕▓
+ * @param key ΦªüΣ┐«µö╣τÜäσÅéµò░σÉì
+ * @param value µû░τÜäσÅéµò░σÇ╝∩╝êµö»µîüσ¡ùτ¼ªΣ╕▓πÇüµò░σ¡ùπÇüσ╕âσ░öσÇ╝∩╝ë
+ * @returns Σ┐«µö╣σÉÄτÜäσ«îµò┤ URL σ¡ùτ¼ªΣ╕▓
+ */
+export function updateUrlParameter(
+  url: string,
+  key: string,
+  value: string | number | boolean,
+): string {
+  // Φºúµ₧ÉσÄƒσºï URL
+  const urlObj = new URL(url);
+
+  // σê¢σ╗║ URLSearchParams σ»╣Φ▒íσñäτÉåµƒÑΦ»óσÅéµò░
+  const params = new URLSearchParams(urlObj.search);
+
+  // ΦïÑσÅéµò░σ¡ÿσ£¿σêÖµ¢┤µû░σÇ╝∩╝êΘ£ÇΦ╜¼µìóΣ╕║σ¡ùτ¼ªΣ╕▓∩╝ë
+  if (params.has(key)) {
+    params.set(key, String(value));
+
+    // µ¢┤µû░ URL τÜäµƒÑΦ»óσÅéµò░Θâ¿σêå
+    urlObj.search = params.toString();
+
+    // Φ┐öσ¢₧σ«îµò┤µû░ URL∩╝êσîàσÉ½σÅ»Φâ╜τÜä hash Θâ¿σêå∩╝ë
+    return urlObj.toString();
+  }
+
+  // σÅéµò░Σ╕ìσ¡ÿσ£¿µù╢τ¢┤µÄÑΦ┐öσ¢₧σÄƒ URL
+  return url;
+}
+
+export function removeQueryParam(
+  paramName: string | string[],
+  customUrl?: string,
+): void {
+  // ΦÄ╖σÅûσ╜ôσëìURLµêûΣ╜┐τö¿Φç¬σ«ÜΣ╣ëURL
+  const currentUrl = customUrl || window.location.href;
+
+  // σê¢σ╗║URLσ»╣Φ▒í
+  const urlObj = new URL(currentUrl);
+
+  // σêáΘÖñµîçσ«ÜτÜäµƒÑΦ»óσÅéµò░
+  if (typeof paramName === "string") {
+    urlObj.searchParams.delete(paramName);
+  } else if (Array.isArray(paramName)) {
+    paramName.forEach((name) => {
+      urlObj.searchParams.delete(name);
+    });
+  }
+
+  // Σ╜┐τö¿history.replaceStateµ¢┤µû░URLΦÇîΣ╕ìσê╖µû░Θí╡Θ¥ó
+  window.history.replaceState({}, document.title, urlObj.toString());
+}
+
+/**
+ * σêñµû¡ href µÿ»σÉªσîàσÉ½ im τ¢╕σà│Φ╖»σ╛ä∩╝êΦ┐ÖΣ║¢Φ╖»σ╛äΣ╕ìΘ£ÇΦªüµö╣σåÖΣ╕║ webview σìÅΦ««∩╝ë
+ */
+export function shouldUseWebview(href: string): boolean {
+  return (
+    href.includes("/cn/im") ||
+    href.includes("/en/im") ||
+    href.includes("/im") ||
+    href.includes("/im/") ||
+    href.includes("/liveChat/")
+  );
+}
+
+/**
+ * σ░åµûçµ£¼Σ╕¡τÜäΦú╕ URL Φ╜¼µìóΣ╕║σÅ»τé╣σç╗τÜä <a> µáçτ¡╛∩╝îσà╝σ«╣σ»îµûçµ£¼∩╝êΣ╕ìτá┤σ¥Åσ╖▓µ£ë HTML µáçτ¡╛σÆîΘô╛µÄÑ∩╝ë
+ * App τ½»Σ╝Üσ░å href µö╣σåÖΣ╕║ bambulab webview σìÅΦ««
+ * @param text σÅ»Φâ╜σîàσÉ½ HTML τÜäµûçµ£¼
+ * @returns σñäτÉåσÉÄτÜäµûçµ£¼
+ */
+export function validIsALink(text: string) {
+  if (!text) return text;
+
+  const urlRegex =
+    /(https?:\/\/[^\s\u4E00-\u9FFF\u3000-\u303F\uFF00-\uFFEF]+)/gi;
+  const htmlTagRegex = /(<[^>]+>)/g;
+  const parts = text.split(htmlTagRegex);
+  const appMode = isApp();
+
+  let insideAnchor = false;
+
+  return parts
+    .map((part) => {
+      if (part.startsWith("<") && part.endsWith(">")) {
+        if (/^<a[\s>]/i.test(part)) {
+          insideAnchor = true;
+        } else if (/^<\/a\s*>/i.test(part)) {
+          insideAnchor = false;
+        }
+        return part;
+      }
+      if (insideAnchor) return part;
+      return part.replace(urlRegex, (_match, url) => {
+        const href = url;
+        return `<a href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+      });
+    })
+    .join("");
+}
+
+export function getUrlParams(): URLSearchParams {
+  // τí«Σ┐¥σ£¿σ«óµê╖τ½»τÄ»σóâµëºΦíî
+  if (typeof window === "undefined") {
+    return new URLSearchParams();
+  }
+
+  return new URLSearchParams(window.location.search);
+}
+
+export function getUrlParam(name: string): string | null {
+  const params = getUrlParams();
+  return params.get(name);
+}
+
+/**
+ * Φ»╗σÅû URL σÅéµò░ `from`∩╝îσ╜ÆΣ╕ÇσîûΣ╕║σ╖▓τƒÑτÜäµ¥Ñµ║Éµ₧ÜΣ╕╛∩╝¢µ£¬τƒÑµêûτ╝║τ£üΦ┐öσ¢₧ nullπÇé
+ */
+export function getExternalFromSource(): ExternalFromSource | null {
+  const raw = getUrlParam("from");
+  if (!raw) return null;
+  const num = Number(raw);
+  if (!Number.isInteger(num)) return null;
+  const known = Object.values(ExternalFromSource).filter(
+    (v): v is number => typeof v === "number",
+  );
+  return known.includes(num) ? (num as ExternalFromSource) : null;
+}
+
+/**
+ * σ╜ôσëìΦ┐¢σàÑµ¥Ñµ║Éµÿ»σÉªΦªüµ▒éσ╝║σê╢τÖ╗σ╜ò∩╝êσªéσòåσƒÄ `from=6` Φ╖│σàÑ∩╝ëπÇé
+ */
+export function isMustLoginFromSource(): boolean {
+  const from = getExternalFromSource();
+  return from !== null && MUST_LOGIN_FROM_SOURCES.has(from);
+}
+
+export function getAllUrlParams(): Record<string, string> {
+  const params = getUrlParams();
+  const result: Record<string, string> = {};
+
+  params.forEach((value, key) => {
+    result[key] = value;
+  });
+
+  return result;
+}
+
+export const isValidUrl = (url: string): boolean => {
+  try {
+    if (!url) return false;
+    const parsedUrl = new URL(url);
+    // Only allow http and https protocols
+    return ["http:", "https:"].includes(parsedUrl.protocol.toLowerCase());
+  } catch (e) {
+    // If URL parsing fails, it's likely not a valid URL
+    return false;
+  }
+};
+
+
+===== webpack://_N_E/./app/utils/url.ts =====
+
+import { isApp } from "@/app/bridge";
+import { ExternalFromSource, MUST_LOGIN_FROM_SOURCES } from "@/app/constants";
+
+/**
+ * Σ┐«µö╣ URL Σ╕¡τÜäµîçσ«ÜσÅéµò░σÇ╝
+ * @param url σÄƒσºï URL σ¡ùτ¼ªΣ╕▓
+ * @param key ΦªüΣ┐«µö╣τÜäσÅéµò░σÉì
+ * @param value µû░τÜäσÅéµò░σÇ╝∩╝êµö»µîüσ¡ùτ¼ªΣ╕▓πÇüµò░σ¡ùπÇüσ╕âσ░öσÇ╝∩╝ë
+ * @returns Σ┐«µö╣σÉÄτÜäσ«îµò┤ URL σ¡ùτ¼ªΣ╕▓
+ */
+export function updateUrlParameter(
+  url: string,
+  key: string,
+  value: string | number | boolean,
+): string {
+  // Φºúµ₧ÉσÄƒσºï URL
+  const urlObj = new URL(url);
+
+  // σê¢σ╗║ URLSearchParams σ»╣Φ▒íσñäτÉåµƒÑΦ»óσÅéµò░
+  const params = new URLSearchParams(urlObj.search);
+
+  // ΦïÑσÅéµò░σ¡ÿσ£¿σêÖµ¢┤µû░σÇ╝∩╝êΘ£ÇΦ╜¼µìóΣ╕║σ¡ùτ¼ªΣ╕▓∩╝ë
+  if (params.has(key)) {
+    params.set(key, String(value));
+
+    // µ¢┤µû░ URL τÜäµƒÑΦ»óσÅéµò░Θâ¿σêå
+    urlObj.search = params.toString();
+
+    // Φ┐öσ¢₧σ«îµò┤µû░ URL∩╝êσîàσÉ½σÅ»Φâ╜τÜä hash Θâ¿σêå∩╝ë
+    return urlObj.toString();
+  }
+
+  // σÅéµò░Σ╕ìσ¡ÿσ£¿µù╢τ¢┤µÄÑΦ┐öσ¢₧σÄƒ URL
+  return url;
+}
+
+export function removeQueryParam(
+  paramName: string | string[],
+  customUrl?: string,
+): void {
+  // ΦÄ╖σÅûσ╜ôσëìURLµêûΣ╜┐τö¿Φç¬σ«ÜΣ╣ëURL
+  const currentUrl = customUrl || window.location.href;
+
+  // σê¢σ╗║URLσ»╣Φ▒í
+  const urlObj = new URL(currentUrl);
+
+  // σêáΘÖñµîçσ«ÜτÜäµƒÑΦ»óσÅéµò░
+  if (typeof paramName === "string") {
+    urlObj.searchParams.delete(paramName);
+  } else if (Array.isArray(paramName)) {
+    paramName.forEach((name) => {
+      urlObj.searchParams.delete(name);
+    });
+  }
+
+  // Σ╜┐τö¿history.replaceStateµ¢┤µû░URLΦÇîΣ╕ìσê╖µû░Θí╡Θ¥ó
+  window.history.replaceState({}, document.title, urlObj.toString());
+}
+
+/**
+ * σêñµû¡ href µÿ»σÉªσîàσÉ½ im τ¢╕σà│Φ╖»σ╛ä∩╝êΦ┐ÖΣ║¢Φ╖»σ╛äΣ╕ìΘ£ÇΦªüµö╣σåÖΣ╕║ webview σìÅΦ««∩╝ë
+ */
+export function shouldUseWebview(href: string): boolean {
+  return (
+    href.includes("/cn/im") ||
+    href.includes("/en/im") ||
+    href.includes("/im") ||
+    href.includes("/im/") ||
+    href.includes("/liveChat/")
+  );
+}
+
+/**
+ * σ░åµûçµ£¼Σ╕¡τÜäΦú╕ URL Φ╜¼µìóΣ╕║σÅ»τé╣σç╗τÜä <a> µáçτ¡╛∩╝îσà╝σ«╣σ»îµûçµ£¼∩╝êΣ╕ìτá┤σ¥Åσ╖▓µ£ë HTML µáçτ¡╛σÆîΘô╛µÄÑ∩╝ë
+ * App τ½»Σ╝Üσ░å href µö╣σåÖΣ╕║ bambulab webview σìÅΦ««
+ * @param text σÅ»Φâ╜σîàσÉ½ HTML τÜäµûçµ£¼
+ * @returns σñäτÉåσÉÄτÜäµûçµ£¼
+ */
+export function validIsALink(text: string) {
+  if (!text) return text;
+
+  const urlRegex =
+    /(https?:\/\/[^\s\u4E00-\u9FFF\u3000-\u303F\uFF00-\uFFEF]+)/gi;
+  const htmlTagRegex = /(<[^>]+>)/g;
+  const parts = text.split(htmlTagRegex);
+  const appMode = isApp();
+
+  let insideAnchor = false;
+
+  return parts
+    .map((part) => {
+      if (part.startsWith("<") && part.endsWith(">")) {
+        if (/^<a[\s>]/i.test(part)) {
+          insideAnchor = true;
+        } else if (/^<\/a\s*>/i.test(part)) {
+          insideAnchor = false;
+        }
+        return part;
+      }
+      if (insideAnchor) return part;
+      return part.replace(urlRegex, (_match, url) => {
+        const href = url;
+        return `<a href="${href}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+      });
+    })
+    .join("");
+}
+
+export function getUrlParams(): URLSearchParams {
+  // τí«Σ┐¥σ£¿σ«óµê╖τ½»τÄ»σóâµëºΦíî
+  if (typeof window === "undefined") {
+    return new URLSearchParams();
+  }
+
+  return new URLSearchParams(window.location.search);
+}
+
+export function getUrlParam(name: string): string | null {
+  const params = getUrlParams();
+  return params.get(name);
+}
+
+/**
+ * Φ»╗σÅû URL σÅéµò░ `from`∩╝îσ╜ÆΣ╕ÇσîûΣ╕║σ╖▓τƒÑτÜäµ¥Ñµ║Éµ₧ÜΣ╕╛∩╝¢µ£¬τƒÑµêûτ╝║τ£üΦ┐öσ¢₧ nullπÇé
+ */
+export function getExternalFromSource(): ExternalFromSource | null {
+  const raw = getUrlParam("from");
+  if (!raw) return null;
+  const num = Number(raw);
+  if (!Number.isInteger(num)) return null;
+  const known = Object.values(ExternalFromSource).filter(
+    (v): v is number => typeof v === "number",
+  );
+  return known.includes(num) ? (num as ExternalFromSource) : null;
+}
+
+/**
+ * σ╜ôσëìΦ┐¢σàÑµ¥Ñµ║Éµÿ»σÉªΦªüµ▒éσ╝║σê╢τÖ╗σ╜ò∩╝êσªéσòåσƒÄ `from=6` Φ╖│σàÑ∩╝ëπÇé
+ */
+export function isMustLoginFromSource(): boolean {
+  const from = getExternalFromSource();
+  return from !== null && MUST_LOGIN_FROM_SOURCES.has(from);
+}
+
+export function getAllUrlParams(): Record<string, string> {
+  const params = getUrlParams();
+  const result: Record<string, string> = {};
+
+  params.forEach((value, key) => {
+    result[key] = value;
+  });
+
+  return result;
+}
+
+export const isValidUrl = (url: string): boolean => {
+  try {
+    if (!url) return false;
+    const parsedUrl = new URL(url);
+    // Only allow http and https protocols
+    return ["http:", "https:"].includes(parsedUrl.protocol.toLowerCase());
+  } catch (e) {
+    // If URL parsing fails, it's likely not a valid URL
+    return false;
+  }
+};
+
