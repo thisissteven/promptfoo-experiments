@@ -1,0 +1,119 @@
+{
+  "base": "https://wiki.bambulab.com",
+  "timestamp": "2026-11-16T17:19:02.577Z",
+  "hypothesis": "Unauthenticated assets.folders exposes asset folders that have no matching page path, and their assets are downloadable.",
+  "rootFolders": 78,
+  "unlinkedWithAssets": 40,
+  "examples": [
+    {
+      "folder": "x1-carbon-combo",
+      "id": 50,
+      "assets": 4,
+      "first": "1.jpg",
+      "status": 200
+    },
+    {
+      "folder": "ams_power_on_failure",
+      "id": 146,
+      "assets": 7,
+      "first": "pin_open.png",
+      "status": 200
+    },
+    {
+      "folder": "ams_is_not_detected",
+      "id": 147,
+      "assets": 20,
+      "first": "ams_tab.png",
+      "status": 200
+    },
+    {
+      "folder": "ams_buffer_signal_lost",
+      "id": 148,
+      "assets": 9,
+      "first": "bus_inside_ams.png",
+      "status": 200
+    },
+    {
+      "folder": "cmyk-wiki",
+      "id": 285,
+      "assets": 2,
+      "first": "修改壳体层数1en.png",
+      "status": 200
+    },
+    {
+      "folder": "1-7-1-studio-hotfix",
+      "id": 324,
+      "assets": 8,
+      "first": "20230804-205405.jpg",
+      "status": 200
+    },
+    {
+      "folder": "lan_mode",
+      "id": 331,
+      "assets": 12,
+      "first": "temp2.png",
+      "status": 200
+    },
+    {
+      "folder": "n1",
+      "id": 336,
+      "assets": 5,
+      "first": "吐料组件.jpg",
+      "status": 200
+    },
+    {
+      "folder": "bind-issue",
+      "id": 349,
+      "assets": 4,
+      "first": "screenshot-20230901-113000.png",
+      "status": 200
+    },
+    {
+      "folder": "send-file-issue",
+      "id": 350,
+      "assets": 7,
+      "first": "snipaste_2023-09-01_15-26-35.png",
+      "status": 200
+    },
+    {
+      "folder": "1-7-8-studio-version",
+      "id": 412,
+      "assets": 2,
+      "first": "20231013-103619.jpg",
+      "status": 200
+    },
+    {
+      "folder": "a1m",
+      "id": 414,
+      "assets": 1,
+      "first": "a1_mini.jpg",
+      "status": 200
+    },
+    {
+      "folder": "create_printer",
+      "id": 420,
+      "assets": 18,
+      "first": "entry_creat_printer.png",
+      "status": 200
+    },
+    {
+      "folder": "create filament",
+      "id": 440,
+      "assets": 8,
+      "first": "entry_create_filament.png",
+      "status": 200
+    },
+    {
+      "folder": "export_configs",
+      "id": 441,
+      "assets": 3,
+      "first": "entry_export_configs.png",
+      "status": 200
+    }
+  ],
+  "summary": {
+    "rootFolders": 78,
+    "unlinkedWithAssets": 40,
+    "firstAssetStatuses200": true
+  }
+}

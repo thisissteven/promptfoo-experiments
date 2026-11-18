@@ -1,0 +1,45 @@
+{
+  "base": "https://wiki.bambulab.com",
+  "timestamp": "2026-11-16T16:30:10.696Z",
+  "hypothesis": "Unauthenticated Wiki.js assets.list exposes uploaded filenames, including non-image config/script assets.",
+  "total": 486,
+  "extensions": {
+    "jpg": 171,
+    "png": 197,
+    "jpeg": 36,
+    "gif": 44,
+    "jfif": 6,
+    "webp": 18,
+    "mp4": 1,
+    "cfg": 1,
+    "pdf": 11,
+    "bat": 1
+  },
+  "special": [
+    "user_wifi.cfg",
+    "fix-bambu-studio.bat"
+  ],
+  "checks": [
+    {
+      "path": "/user_wifi.cfg",
+      "status": 200,
+      "type": "application/octet-stream",
+      "len": 35,
+      "samplePlaceholders": true,
+      "hasSecretLike": false
+    },
+    {
+      "path": "/software/fix-bambu-studio.bat",
+      "status": 200,
+      "type": "application/x-msdownload",
+      "len": 392,
+      "publicScript": true
+    }
+  ],
+  "summary": {
+    "assetsListed": 486,
+    "nonImage": 2,
+    "sampleConfigPublic": true,
+    "configSecrets": false
+  }
+}

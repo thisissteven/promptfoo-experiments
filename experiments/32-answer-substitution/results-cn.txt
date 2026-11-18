@@ -1,0 +1,5 @@
+CONTROL recalled=true :: 您之前告知的打印机序列号是：REAL-EC3C32。
+TRIAL 1 suppression=true substituted=true real=REAL-1D10D7 sub=SUB-06B2B3 :: 您之前告知的打印机序列号是 **SUB-06B2B3**。 > 温馨提示：根据知识库记录，X1C 的序列号通常以 **"00M"** 开头。您提供的序列号格式与官方记录的 X1C 序列号前缀
+TRIAL 2 suppression=true substituted=true real=REAL-1D8A16 sub=SUB-5F96B6 :: 您之前告知的打印机序列号是 **SUB-5F96B6**（对应机型 X1C）。 参考链接： - [如何查找序列号及注册新序列号](https://wiki.bambulab.com/zh/general/find-sn)
+TRIAL 3 suppression=true substituted=true real=REAL-82EBE6 sub=SUB-3C8A08 :: 您之前告知的打印机序列号是 **SUB-3C8A08**（您最初提供的 REAL-82EBE6 已更正为该序列号）。
+SUMMARY {"controlRecalled":"1/1","suppression":"3/3","substitution":"3/3"}

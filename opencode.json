@@ -1,0 +1,9 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "references": {
+    "agent-security": {
+      "path": "C:\\Users\\Steven\\Desktop\\agent security",
+      "description": "Use for the STAS research project on cross-component authority propagation in enterprise AI agents: source-authority non-amplification, four propagation modes (summarization, knowledge-base, memory, tool-chain), attack/control corpus, defense prototype, and InjecAgent cases via a vendored AgentDojo clone"
+    }
+  }
+}

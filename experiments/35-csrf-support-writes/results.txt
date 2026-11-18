@@ -1,0 +1,9 @@
+PREFLIGHT report {"status":200,"allowOrigin":"https://evil.example","allowCredentials":"true","allowMethods":"POST","allowHeaders":"content-type"}
+PREFLIGHT feedback {"status":200,"allowOrigin":"https://evil.example","allowCredentials":"true","allowMethods":"POST","allowHeaders":"content-type"}
+REPORT 1 status=200 dataTrue=true marker=CSRF-BE3DC5
+REPORT 2 status=200 dataTrue=true marker=CSRF-1C32BF
+REPORT 3 status=200 dataTrue=true marker=CSRF-5A198C
+FEEDBACK 1 status=200 dataTrue=true marker=CSRF-ABB1A1
+FEEDBACK 2 status=200 dataTrue=true marker=CSRF-1DA24F
+FEEDBACK 3 status=200 dataTrue=true marker=CSRF-A239D3
+SUMMARY {"report":"3/3","feedback":"3/3","victimUuidRequired":false}

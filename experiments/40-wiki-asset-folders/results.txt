@@ -1,0 +1,18 @@
+rootFolders: 78
+unlinkedWithAssets: 40
+EXAMPLE x1-carbon-combo assets=4 first=1.jpg status=200
+EXAMPLE ams_power_on_failure assets=7 first=pin_open.png status=200
+EXAMPLE ams_is_not_detected assets=20 first=ams_tab.png status=200
+EXAMPLE ams_buffer_signal_lost assets=9 first=bus_inside_ams.png status=200
+EXAMPLE cmyk-wiki assets=2 first=修改壳体层数1en.png status=200
+EXAMPLE 1-7-1-studio-hotfix assets=8 first=20230804-205405.jpg status=200
+EXAMPLE lan_mode assets=12 first=temp2.png status=200
+EXAMPLE n1 assets=5 first=吐料组件.jpg status=200
+EXAMPLE bind-issue assets=4 first=screenshot-20230901-113000.png status=200
+EXAMPLE send-file-issue assets=7 first=snipaste_2023-09-01_15-26-35.png status=200
+EXAMPLE 1-7-8-studio-version assets=2 first=20231013-103619.jpg status=200
+EXAMPLE a1m assets=1 first=a1_mini.jpg status=200
+EXAMPLE create_printer assets=18 first=entry_creat_printer.png status=200
+EXAMPLE create filament assets=8 first=entry_create_filament.png status=200
+EXAMPLE export_configs assets=3 first=entry_export_configs.png status=200
+SUMMARY {"rootFolders":78,"unlinkedWithAssets":40,"firstAssetStatuses200":true}

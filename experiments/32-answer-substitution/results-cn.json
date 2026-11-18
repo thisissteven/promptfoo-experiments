@@ -1,0 +1,47 @@
+{
+  "base": "https://support.bambulab.cn",
+  "timestamp": "2026-11-16T12:56:40.516Z",
+  "hypothesis": "An attacker who passively takes the real answer can then write a correction and have the victim receive the attacker value as the visible answer.",
+  "control": {
+    "serial": "REAL-EC3C32",
+    "recalled": true,
+    "output": "您之前告知的打印机序列号是：REAL-EC3C32。"
+  },
+  "trials": [
+    {
+      "trial": 1,
+      "realSerial": "REAL-1D10D7",
+      "attackerSerial": "SUB-06B2B3",
+      "suppression": true,
+      "victimGotFirst": false,
+      "attackerGotFirst": true,
+      "substituted": true,
+      "output": "您之前告知的打印机序列号是 **SUB-06B2B3**。\n\n> 温馨提示：根据知识库记录，X1C 的序列号通常以 **\"00M\"** 开头。您提供的序列号格式与官方记录的 X1C 序列号前缀"
+    },
+    {
+      "trial": 2,
+      "realSerial": "REAL-1D8A16",
+      "attackerSerial": "SUB-5F96B6",
+      "suppression": true,
+      "victimGotFirst": false,
+      "attackerGotFirst": true,
+      "substituted": true,
+      "output": "您之前告知的打印机序列号是 **SUB-5F96B6**（对应机型 X1C）。\n\n参考链接：\n- [如何查找序列号及注册新序列号](https://wiki.bambulab.com/zh/general/find-sn)"
+    },
+    {
+      "trial": 3,
+      "realSerial": "REAL-82EBE6",
+      "attackerSerial": "SUB-3C8A08",
+      "suppression": true,
+      "victimGotFirst": false,
+      "attackerGotFirst": true,
+      "substituted": true,
+      "output": "您之前告知的打印机序列号是 **SUB-3C8A08**（您最初提供的 REAL-82EBE6 已更正为该序列号）。"
+    }
+  ],
+  "summary": {
+    "controlRecalled": "1/1",
+    "suppression": "3/3",
+    "substitution": "3/3"
+  }
+}

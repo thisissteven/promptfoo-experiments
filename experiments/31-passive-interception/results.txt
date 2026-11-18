@@ -1,0 +1,9 @@
+Passive interception test
+base: https://support.bambulab.com
+trial 1 (victim-only-control): chat=200 victim=true attacker=false control=false
+trial 2 (victim-only-control): chat=200 victim=true attacker=false control=false
+trial 3 (victim-only-control): chat=200 victim=true attacker=false control=false
+trial 1 (victim+passive-listener): chat=200 victim=false attacker=true control=false
+trial 2 (victim+passive-listener): chat=200 victim=false attacker=true control=false
+trial 3 (victim+passive-listener): chat=200 victim=false attacker=true control=false
+SUMMARY {"victimOnlyControl":"3/3","passiveVictimGot":"0/3","passiveAttackerGot":"3/3","passiveControlGot":"0/3"}

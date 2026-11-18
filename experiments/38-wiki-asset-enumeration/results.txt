@@ -1,0 +1,6 @@
+assets: 486
+extensions: {"jpg":171,"png":197,"jpeg":36,"gif":44,"jfif":6,"webp":18,"mp4":1,"cfg":1,"pdf":11,"bat":1}
+special: ["user_wifi.cfg","fix-bambu-studio.bat"]
+CHECK /user_wifi.cfg => 200 application/octet-stream 35 {"path":"/user_wifi.cfg","status":200,"type":"application/octet-stream","len":35,"samplePlaceholders":true,"hasSecretLike":false}
+CHECK /software/fix-bambu-studio.bat => 200 application/x-msdownload 392 {"path":"/software/fix-bambu-studio.bat","status":200,"type":"application/x-msdownload","len":392,"publicScript":true}
+SUMMARY {"assetsListed":486,"nonImage":2,"sampleConfigPublic":true,"configSecrets":false}

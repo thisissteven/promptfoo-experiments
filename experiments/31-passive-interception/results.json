@@ -1,0 +1,87 @@
+{
+  "base": "https://support.bambulab.com",
+  "timestamp": "2026-11-16T08:48:52.804Z",
+  "hypothesis": "An attacker SSE stream that sends no chat request receives the answer to a victim-initiated turn.",
+  "victimOnlyControl": [
+    {
+      "trial": 1,
+      "mode": "victim-only-control",
+      "marker": "PASSIVE-046FE658",
+      "chatStatus": 200,
+      "victimGot": true,
+      "attackerGot": false,
+      "controlGot": false,
+      "victimOutput": "PASSIVE-046FE658",
+      "attackerOutput": "",
+      "controlOutput": ""
+    },
+    {
+      "trial": 2,
+      "mode": "victim-only-control",
+      "marker": "PASSIVE-45413749",
+      "chatStatus": 200,
+      "victimGot": true,
+      "attackerGot": false,
+      "controlGot": false,
+      "victimOutput": "PASSIVE-45413749",
+      "attackerOutput": "",
+      "controlOutput": ""
+    },
+    {
+      "trial": 3,
+      "mode": "victim-only-control",
+      "marker": "PASSIVE-B4EDE56E",
+      "chatStatus": 200,
+      "victimGot": true,
+      "attackerGot": false,
+      "controlGot": false,
+      "victimOutput": "PASSIVE-B4EDE56E",
+      "attackerOutput": "",
+      "controlOutput": ""
+    }
+  ],
+  "passiveListener": [
+    {
+      "trial": 1,
+      "mode": "victim+passive-listener",
+      "marker": "PASSIVE-2162CC17",
+      "chatStatus": 200,
+      "victimGot": false,
+      "attackerGot": true,
+      "controlGot": false,
+      "victimOutput": "",
+      "attackerOutput": "PASSIVE-2162CC17",
+      "controlOutput": ""
+    },
+    {
+      "trial": 2,
+      "mode": "victim+passive-listener",
+      "marker": "PASSIVE-2EB916AA",
+      "chatStatus": 200,
+      "victimGot": false,
+      "attackerGot": true,
+      "controlGot": false,
+      "victimOutput": "",
+      "attackerOutput": "PASSIVE-2EB916AA",
+      "controlOutput": ""
+    },
+    {
+      "trial": 3,
+      "mode": "victim+passive-listener",
+      "marker": "PASSIVE-2D72AAA7",
+      "chatStatus": 200,
+      "victimGot": false,
+      "attackerGot": true,
+      "controlGot": false,
+      "victimOutput": "",
+      "attackerOutput": "PASSIVE-2D72AAA7",
+      "controlOutput": ""
+    }
+  ],
+  "summary": {
+    "victimOnlyControl": "3/3",
+    "passiveVictimGot": "0/3",
+    "passiveAttackerGot": "3/3",
+    "passiveControlGot": "0/3"
+  }
+}

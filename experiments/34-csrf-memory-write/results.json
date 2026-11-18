@@ -1,0 +1,53 @@
+{
+  "base": "https://support.bambulab.com",
+  "timestamp": "2026-11-16T13:38:55.335Z",
+  "hypothesis": "A malicious page can write into a victim conversation via a CORS-allowed JSON POST keyed only by the body uuid, and the victim recalls it.",
+  "preflight": {
+    "status": 200,
+    "allowOrigin": "https://evil.example",
+    "allowCredentials": "true",
+    "allowMethods": "POST",
+    "allowHeaders": "content-type"
+  },
+  "trials": [
+    {
+      "trial": 1,
+      "writeStatus": 200,
+      "marker": "CSRF-C2AAF0",
+      "recalled": true,
+      "output": " The serial number you mentioned earlier for your X1C printer is **CSRF-C2AAF0**."
+    },
+    {
+      "trial": 2,
+      "writeStatus": 200,
+      "marker": "CSRF-AB74BD",
+      "recalled": true,
+      "output": " The printer serial number you mentioned earlier is **CSRF-AB74BD**."
+    },
+    {
+      "trial": 3,
+      "writeStatus": 200,
+      "marker": "CSRF-B76228",
+      "recalled": true,
+      "output": " The printer serial number you provided earlier is **CSRF-B76228**."
+    }
+  ],
+  "controls": {
+    "differentUuid": {
+      "marker": "CTRL-802F9B",
+      "recalledOnVictim": false,
+      "output": " NONE."
+    },
+    "sameOrigin": {
+      "writeStatus": 200,
+      "marker": "SAME-AD4141",
+      "recalled": true,
+      "output": " The serial number you mentioned earlier for your X1C printer is **SAME-AD4141**."
+    }
+  },
+  "summary": {
+    "crossSiteWriteRecall": "3/3",
+    "differentUuidControl": "not recalled (good)",
+    "sameOriginControl": "recalled (good)"
+  }
+}

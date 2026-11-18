@@ -1,0 +1,8 @@
+INFO 1 status=200 code=1 userIdLen=18 userIdHash=12c54c8bcca4
+INFO 2 status=200 code=1 userIdLen=18 userIdHash=41cca51a222b
+INFO 3 status=200 code=1 userIdLen=18 userIdHash=89151a740534
+ADDRESS {"status":200,"code":40100,"message":"Unauthorized","dataType":"undefined"}
+CART {"status":200,"code":1,"cartSize":0}
+TOKEN {"status":200,"code":1,"message":"success","tokenPresent":false}
+ADD {"status":200,"code":10012,"message":"Some products cannot be added to your shopping cart. Please try something else."}
+SUMMARY {"distinctGuestIds":3,"calls":3,"address":"40100/Unauthorized","cartSize":0,"checkoutTokenPresent":false,"cartAdd":"10012/Some products cannot be added to your shopping cart. Please try something else."}

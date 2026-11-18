@@ -1,0 +1,86 @@
+{
+  "base": "https://wiki.bambulab.com",
+  "timestamp": "2026-11-16T16:54:30.180Z",
+  "hypothesis": "A public Wiki.js asset folder exposes downloadable product images for an N1 model that has no public wiki page.",
+  "n1Folder": {
+    "id": 336,
+    "name": "n1"
+  },
+  "assets": [
+    "吐料组件.jpg",
+    "x轴组件.png",
+    "x轴同步带.png",
+    "x惰轮.png",
+    "com.jpg"
+  ],
+  "pageChecks": [
+    {
+      "path": "/en/n1",
+      "status": 404,
+      "type": "text/html; charset=utf-8",
+      "bytes": 3389
+    },
+    {
+      "path": "/zh/n1",
+      "status": 404,
+      "type": "text/html; charset=utf-8",
+      "bytes": 3389
+    },
+    {
+      "path": "/en/n1/manual",
+      "status": 404,
+      "type": "text/html; charset=utf-8",
+      "bytes": 3396
+    },
+    {
+      "path": "/zh/n1/manual",
+      "status": 404,
+      "type": "text/html; charset=utf-8",
+      "bytes": 3396
+    }
+  ],
+  "searchHits": 19,
+  "downloads": [
+    {
+      "file": "吐料组件.jpg",
+      "path": "/n1/%E5%90%90%E6%96%99%E7%BB%84%E4%BB%B6.jpg",
+      "status": 200,
+      "type": "image/jpeg",
+      "bytes": 129694
+    },
+    {
+      "file": "x轴组件.png",
+      "path": "/n1/x%E8%BD%B4%E7%BB%84%E4%BB%B6.png",
+      "status": 200,
+      "type": "image/png",
+      "bytes": 577868
+    },
+    {
+      "file": "x轴同步带.png",
+      "path": "/n1/x%E8%BD%B4%E5%90%8C%E6%AD%A5%E5%B8%A6.png",
+      "status": 200,
+      "type": "image/png",
+      "bytes": 524637
+    },
+    {
+      "file": "x惰轮.png",
+      "path": "/n1/x%E6%83%B0%E8%BD%AE.png",
+      "status": 200,
+      "type": "image/png",
+      "bytes": 393138
+    },
+    {
+      "file": "com.jpg",
+      "path": "/n1/com.jpg",
+      "status": 200,
+      "type": "image/jpeg",
+      "bytes": 58816
+    }
+  ],
+  "summary": {
+    "n1FolderExposed": true,
+    "assets": 5,
+    "publicN1Page": false,
+    "downloadable": 5
+  }
+}

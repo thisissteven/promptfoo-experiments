@@ -1,0 +1,95 @@
+{
+  "base": "https://wiki.bambulab.com",
+  "timestamp": "2026-11-16T14:29:25.683Z",
+  "hypothesis": "Unauthenticated Wiki.js pages.list exposes all page metadata, including Staging-/draft/test pages, and some are directly readable over HTTP.",
+  "locales": {
+    "en": {
+      "status": 200,
+      "pages": 3245
+    },
+    "zh": {
+      "status": 200,
+      "pages": 3286
+    }
+  },
+  "strictMatches": [
+    {
+      "locale": "en",
+      "id": 1358,
+      "path": "makerworld/release-note-20240104",
+      "titlePrefix": "MakerWorld Release 20240104 (draft)"
+    },
+    {
+      "locale": "en",
+      "id": 3727,
+      "path": "Staging-H2S-Network-Connection-Guide",
+      "titlePrefix": "Wi-Fi/Network connection guide for H2S"
+    },
+    {
+      "locale": "en",
+      "id": 6588,
+      "path": "p2s/troubleshooting/extruder_motor_test",
+      "titlePrefix": "Extruder Motor Test Method for P2S/X2D "
+    },
+    {
+      "locale": "zh",
+      "id": 4839,
+      "path": "miniwiki/hms/p2s/troubleshooting/test2",
+      "titlePrefix": ""
+    },
+    {
+      "locale": "zh",
+      "id": 4948,
+      "path": "miniwiki/hms/p2s/troubleshooting/test_responsive",
+      "titlePrefix": ""
+    },
+    {
+      "locale": "zh",
+      "id": 6587,
+      "path": "p2s/troubleshooting/extruder_motor_test",
+      "titlePrefix": "P2S/X2D 挤出电机测试方法"
+    },
+    {
+      "locale": "zh",
+      "id": 54004,
+      "path": "miniwiki/hms/x1/troubleshooting/0300_0a00_0001_0003_test",
+      "titlePrefix": ""
+    }
+  ],
+  "pageChecks": [
+    {
+      "locale": "en",
+      "path": "Staging-H2S-Network-Connection-Guide",
+      "status": 200
+    },
+    {
+      "locale": "zh",
+      "path": "miniwiki/hms/p2s/troubleshooting/test2",
+      "status": 200
+    },
+    {
+      "locale": "zh",
+      "path": "a2l/manual/internal-print-files",
+      "status": 200
+    },
+    {
+      "locale": "en",
+      "path": "p2s/maintenance/replace-purge-wiper",
+      "status": 200
+    }
+  ],
+  "home": {
+    "status": 200,
+    "hasStaging": false,
+    "hasH2S": true,
+    "hasA2L": false,
+    "hasP2S": false
+  },
+  "summary": {
+    "enPages": 3245,
+    "zhPages": 3286,
+    "strictMatches": 7,
+    "stagingReadable": true,
+    "stagingLinkedFromHome": false
+  }
+}

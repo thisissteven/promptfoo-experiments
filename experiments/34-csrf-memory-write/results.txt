@@ -1,0 +1,7 @@
+PREFLIGHT {"status":200,"allowOrigin":"https://evil.example","allowCredentials":"true","allowMethods":"POST","allowHeaders":"content-type"}
+TRIAL 1 write=200 recalled=true ::  The serial number you mentioned earlier for your X1C printer is **CSRF-C2AAF0**.
+TRIAL 2 write=200 recalled=true ::  The printer serial number you mentioned earlier is **CSRF-AB74BD**.
+TRIAL 3 write=200 recalled=true ::  The printer serial number you provided earlier is **CSRF-B76228**.
+CONTROL differentUuid recalled=false
+CONTROL sameOrigin recalled=true
+SUMMARY {"crossSiteWriteRecall":"3/3","differentUuidControl":"not recalled (good)","sameOriginControl":"recalled (good)"}
